@@ -9,8 +9,7 @@ __pypackages__/
 .env
 venv/
 
+.idea/
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# data
+data/
