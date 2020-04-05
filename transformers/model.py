@@ -2,69 +2,61 @@ from statsmodels.tsa.arima_model import ARIMA
 from functools import partial
 import pandas as pd
 from xgboost import XGBRegressor
+from sklearn.multioutput import MultiOutputRegressor as mor
 from fbprophet import Prophet
+from tqdm import tqdm
 
 class Naive:
-    def __init__(self, method, kwargs, frequency):
+    def __init__(self, method, kwargs, n_forecast):
         self.method = method
         self.kwargs = kwargs
-        self.frequency = frequency
+        self.n_forecast = n_forecast
 
     def fit(self, X, y=None):
         self.model = self.method(X, **self.kwargs)
         return self
 
-    def predict(self, X=None):
-        if self.frequency == "D":
-            self.model *= 30.0
-        yhat = self.model
+    def predict(self, X):
+        yhat = pd.DataFrame(index=X.index)
+        for i in tqdm(range(self.n_forecast)):
+            yhat.loc[:, f'forecast_{i}'] = self.model
+            self.fit(pd.concat([X, yhat], axis=1))
         return yhat
 
-
 class SimpleARIMA:
-    def __init__(self, lag_order, degree_of_diff, ma_window, model=ARIMA):
+    def __init__(self, lag_order, degree_of_diff, ma_window, model=ARIMA, n_forecast):
         self.lag_order = lag_order
         self.degree_of_diff = degree_of_diff
         self.ma_window = ma_window
         self.model = partial(
             model, order=(self.lag_order, self.degree_of_diff, self.ma_window)
         )
+        self.n_forecast = n_forecast
 
     def fit(self, X, y=None):
-        if not hasattr(self, "history"):
-            self.history = list(X)
-        self.model_fit = self.model(endog=self.history).fit(disp=0)
+        self.models = [self.model(endog=list(X.iloc[i, :])).fit(disp=0) for i in range(X.shape[0])]
         return self
 
-    def append_refit(self, obs):
-        self.history.append(obs)
-        self.fit(X=None)
-
     def predict(self, X):
-        n_obs = len(X)
-        yhat = []
-        for i in range(n_obs):
-            pred = self.model_fit.forecast()[0][0]
-            yhat.append(pred)
-            self.append_refit(pred)
-        return pd.Series(sum(yhat))
-
+        yhat = pd.DataFrame(index=X.index)
+        for i in tqdm(range(self.n_forecast)):
+            yhat.loc[:, f'forecast_{i}'] = [model.forecast()[0][0] for model in self.models]
+            self.fit(pd.concat([X, yhat], axis=1))
+        return yhat
 
 class SimpleGBM:
-    def __init__(self, model=XGBRegressor, **params):
-        self.model = model(**params)
+    def __init__(self, n_forecast, model=XGBRegressor, **params):
+        self.model = mor(model(**params))
+        self.n_forecast = n_forecast
 
     def col_map(self, X):
         X.columns = [f"t_{i}" for i in reversed(range(len(X.columns)))]
         return X
 
-    def fit(self, X):
-        y = X.iloc[:, -1]
-        X = X.iloc[:, :-1]
-
+    def fit(self, X, y):
         X = self.col_map(X)
         self.cols = X.columns
-        self.model.fit(X, y)
+        self.model.fit(X, y.values)
         return self
 
     def predict(self, X):
@@ -75,17 +67,26 @@ class SimpleGBM:
 
 
 class FBProph:
-    def __init__(self, model=Prophet):
+    def __init__(self, n_forecast, model=Prophet):
         self.model = model
+        self.n_forecast = n_forecast
 
-    def fit(self, X):
-        X = X.reset_index()
-        X.columns = ["ds", "y"]
-        self.fit_model = self.model().fit(X)
+    def get_row(self, data, idx):
+        rowdata = data.iloc[idx, :].reset_index()
+        rowdata.columns = ["ds", "y"]
+        return rowdata
+
+    def row_predict(self, model):
+        future = model.make_future_dataframe(periods=self.n_forecast)
+        forecast = model.predict(future)
+        return pd.Series(forecast.iloc[-self.n_forecast:, :]['yhat'])
+
+    def fit(self, X, y=None):
+        self.models = [self.model().fit(self.get_row(X, i)) for i in range(X.shape[0])]
         return self
 
     def predict(self, X):
-        n_obs = X.shape[0]
-        future = self.fit_model.make_future_dataframe(periods=n_obs)
-        self.forecast = self.fit_model.predict(future)
-        return pd.Series(self.forecast.iloc[-n_obs:, :]["yhat"].sum())
+        yhat = pd.DataFrame(index=X.index, columns=[f'forecast_{i}' for i in self.n_forecast])
+        for i, model in enumerate(self.models):
+            yhat.iloc[i, :] = self.row_predict(model)
+        return yhat
