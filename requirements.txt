@@ -6,3 +6,6 @@ scikit-learn==0.22
 jupyter==1.0.0
 descartes==1.1.0
 pysal==2.2.0
+xgboost==1.0.2
+fbprophet==0.6
+plotly==4.6.0

@@ -14,3 +14,4 @@ class CreateTS(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         return X.pivot(index=self.geo_col, columns='date',values=self.val_col).fillna(0)
+

@@ -3,8 +3,6 @@ from functools import partial
 import pandas as pd
 from xgboost import XGBRegressor
 from fbprophet import Prophet
-from utils import reduce_to_sum
-
 
 class Naive:
     def __init__(self, method, kwargs, frequency):
@@ -34,7 +32,6 @@ class SimpleARIMA:
 
     def fit(self, X, y=None):
         if not hasattr(self, "history"):
-            X = reduce_to_sum(X)
             self.history = list(X)
         self.model_fit = self.model(endog=self.history).fit(disp=0)
         return self
@@ -44,7 +41,7 @@ class SimpleARIMA:
         self.fit(X=None)
 
     def predict(self, X):
-        n_obs = len(reduce_to_sum(X))
+        n_obs = len(X)
         yhat = []
         for i in range(n_obs):
             pred = self.model_fit.forecast()[0][0]
@@ -62,8 +59,8 @@ class SimpleGBM:
         return X
 
     def fit(self, X):
-        y = X.iloc[:, -30:].sum(axis=1)
-        X = X.iloc[:, :-30]
+        y = X.iloc[:, -1]
+        X = X.iloc[:, :-1]
 
         X = self.col_map(X)
         self.cols = X.columns
@@ -82,13 +79,13 @@ class FBProph:
         self.model = model
 
     def fit(self, X):
-        X = reduce_to_sum(X).reset_index()
+        X = X.reset_index()
         X.columns = ["ds", "y"]
         self.fit_model = self.model().fit(X)
         return self
 
     def predict(self, X):
-        n_obs = reduce_to_sum(X).shape[0]
+        n_obs = X.shape[0]
         future = self.fit_model.make_future_dataframe(periods=n_obs)
         self.forecast = self.fit_model.predict(future)
         return pd.Series(self.forecast.iloc[-n_obs:, :]["yhat"].sum())

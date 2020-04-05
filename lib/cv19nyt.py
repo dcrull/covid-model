@@ -36,5 +36,4 @@ def merge_gdf(df, gdf):
     if 'county' in df: gdf['fips'] += gdf['COUNTYFP']
     return df.merge(gdf[['fips','geometry']], on='fips', how='left')
 
-def create_ts(df, val_col):
-    return df.pivot(index='geoid', columns='date', values=val_col).fillna(0)
+
