@@ -18,15 +18,23 @@ def get_geoid(df):
 
     return df
 
-
 def df_from_api(apipath, **kwargs):
     return get_geoid(pd.read_csv(apipath, parse_dates=['date'], **kwargs))
 
 def load_gdfs(dpath):
-    return gpd.read_file(dpath, geometry='geometry', crs='EPGS:4426')
+    return gpd.read_file(dpath, geometry='geometry', crs='EPSG:4326')
 
-def get_state_ts(val_col):
-    return df_from_api(nyt_state_api).pivot(index='geoid', columns='date', values=val_col).fillna(0)
+def convert_fips(df):
+    df['fips'] = [f'{i:.0f}' for i in df['fips']]
+    max_len = max([len(i) for i in df['fips']])
+    df['fips'] = [i.zfill(max_len) for i in df['fips']]
+    return df
 
-def get_county_ts(val_col):
-    return df_from_api(nyt_county_api).pivot(index='geoid', columns='date', values=val_col).fillna(0)
+def merge_gdf(df, gdf):
+    df = convert_fips(df)
+    gdf['fips'] = gdf['STATEFP']
+    if 'county' in df: gdf['fips'] += gdf['COUNTYFP']
+    return df.merge(gdf[['fips','geometry']], on='fips', how='left')
+
+def create_ts(df, val_col):
+    return df.pivot(index='geoid', columns='date', values=val_col).fillna(0)

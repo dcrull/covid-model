@@ -4,3 +4,5 @@ seaborn==0.10.0
 geopandas==0.7.0
 scikit-learn==0.22
 jupyter==1.0.0
+descartes==1.1.0
+pysal==2.2.0
