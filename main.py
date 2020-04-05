@@ -2,16 +2,33 @@ from sklearn.pipeline import Pipeline
 from transformers.create_ts import CreateTS
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from lib.cv19nyt import df_from_api, nyt_state_api, nyt_county_api
+import pandas as pd
+import numpy as np
 
 GEO = 'geoid'
 TARGET = 'cases'
 DATA_API = nyt_county_api
+
 MODEL = Naive
-MODEL_ID = 'naive'
-GBM = False
+MODEL_PARAMS = {'method':np.mean, 'kwargs':{'axis':1}}
+MODEL_ID = 'naive_model'
 
+# MODEL = SimpleARIMA
+# MODEL_PARAMS = {'lag_order':7, 'degree_of_diff':0, 'ma_window':0}
+# MODEL_ID = 'simpleARIMA'
 
-STEPS = [('create_ts', CreateTS(GEO, TARGET))]
+# MODEL = SimpleGBM
+# MODEL_PARAMS = {'n_jobs'=-1}
+# MODEL_ID = 'XGB'
+
+# MODEL = FBProph
+# MODEL_PARAMS = {}
+# MODEL_ID = "prophet"
+
+STEPS = []
+
+def make_pipeline(STEPS):
+    return Pipeline(STEPS)
 
 class CVPredict:
     def __init__(
@@ -19,21 +36,27 @@ class CVPredict:
         n_forecast,
         data_api=DATA_API,
         target=TARGET,
-        steps=STEPS,
+        pipeline=None,
         model=MODEL,
+        model_params = MODEL_PARAMS,
         model_id=MODEL_ID,
     ):
         self.n_forecast = n_forecast
-        self.data = df_from_api(data_api)
         self.target = target
-        self.model = model
+        self.data = df_from_api(data_api)
+        self.pipeline = pipeline
+        self.model = model(n_forecast=self.n_forecast, **model_params)
         self.model_id = model_id
+        self.__create_ts(self.data)
         self.__train_holdout_split()
-        self.pipeline = Pipeline(steps)
+
+
+    def __create_ts(self, data):
+        self.ts = data.pivot(index='geoid', columns='date', values=self.target).fillna(0)
 
     def __train_holdout_split(self):
-        self.train_data = self.data.iloc[:, :-self.n_forecast*2]
-        self.test_data = self.data
+        self.train_data = self.ts.iloc[:, :-self.n_forecast*2]
+        self.test_data = self.ts
 
     def cv_splitter(self, k):
         ncols = self.train_data.shape[1] - (self.n_forecast * 2)
@@ -80,10 +103,10 @@ class CVPredict:
         i = 0
         print("conducting expanding window cross-validation...")
         for train_X, train_y, valid_X, valid_y in tqdm(folds):
+            train_X = self.train_data.loc[:, train_X]
             train_y = self.train_data.loc[:, train_y]
-            train_X, train_y = self.pipeline.fit_transform(X=self.train_data.loc[:, train_X], y=train_y)
+            valid_X = self.train_data.loc[:, valid_X]
             valid_y = self.train_data.loc[:, valid_y]
-            valid_X, valid_y = self.pipeline.transform(X=self.train_data.loc[:, valid_X], y=valid_y)
 
             self.model.fit(train_X, train_y)
             train_yhat = self.model.predict(train_X)
@@ -122,13 +145,10 @@ class CVPredict:
 
     def final_predict(self):
         print('predicting on test data...')
-        train_X = self.train_data.iloc[:, :-self.n_forecast]
-        train_y = self.train_data.iloc[:, -self.n_forecast:]
-        test_X = self.test_data.iloc[:, :-self.n_forecast]
-        test_y = self.test_data.iloc[:, -self.n_forecast:]
-
-        self.train_X, self.train_y = self.pipeline.fit_transform(train_X, train_y)
-        self.test_X, self.test_y = self.pipeline.transform(test_X, test_y)
+        self.train_X = self.train_data.iloc[:, :-self.n_forecast]
+        self.train_y = self.train_data.iloc[:, -self.n_forecast:]
+        self.test_X = self.test_data.iloc[:, :-self.n_forecast]
+        self.test_y = self.test_data.iloc[:, -self.n_forecast:]
 
         self.model.fit(self.train_X, self.train_y)
         self.test_yhat = self.model.predict(self.test_X)

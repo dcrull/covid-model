@@ -24,7 +24,7 @@ class Naive:
         return yhat
 
 class SimpleARIMA:
-    def __init__(self, lag_order, degree_of_diff, ma_window, model=ARIMA, n_forecast):
+    def __init__(self, n_forecast, lag_order, degree_of_diff, ma_window, model=ARIMA):
         self.lag_order = lag_order
         self.degree_of_diff = degree_of_diff
         self.ma_window = ma_window
@@ -46,7 +46,7 @@ class SimpleARIMA:
 
 class SimpleGBM:
     def __init__(self, n_forecast, model=XGBRegressor, **params):
-        self.model = mor(model(**params))
+        self.model = mor(model(**params), n_jobs=-1)
         self.n_forecast = n_forecast
 
     def col_map(self, X):
