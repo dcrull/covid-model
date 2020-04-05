@@ -9,9 +9,12 @@ class CreateTS(BaseEstimator, TransformerMixin):
         self.geo_col = geo_col
         self.val_col = val_col
 
-    def fit(self, X):
+    def pivot_data(self, data):
+        return data.pivot(index=self.geo_col, columns='date', values=self.val_col).fillna(0)
+
+    def fit(self, X, y):
         return self
 
-    def transform(self, X):
-        return X.pivot(index=self.geo_col, columns='date',values=self.val_col).fillna(0)
+    def transform(self, X, y):
+        return self.pivot_data(X), self.pivot_data(y)
 

@@ -16,33 +16,35 @@ STEPS = [('create_ts', CreateTS(GEO, TARGET))]
 class CVPredict:
     def __init__(
         self,
+        n_forecast,
         data_api=DATA_API,
         target=TARGET,
         steps=STEPS,
         model=MODEL,
         model_id=MODEL_ID,
-        gbm=GBM,
     ):
+        self.n_forecast = n_forecast
         self.data = df_from_api(data_api)
         self.target = target
         self.model = model
         self.model_id = model_id
         self.__train_holdout_split()
         self.pipeline = Pipeline(steps)
-        self.gbm = gbm
 
     def __train_holdout_split(self):
-        self.train_data = self.data.iloc[:, :-1]
-        self.test_data = self.data.iloc[:, -1]
+        self.train_data = self.data.iloc[:, :-self.n_forecast*2]
+        self.test_data = self.data
 
-    def cv_splitter(self, k=10):
-        ncols = self.train_data.shape[1] - 1
+    def cv_splitter(self, k):
+        ncols = self.train_data.shape[1] - (self.n_forecast * 2)
         step = ncols // k
 
         for i in np.arange(step, ncols, step=step):
-            train_idx = self.train_data.iloc[:, :i].columns
-            test_idx = self.train_data.iloc[:, i].columns
-            yield train_idx, test_idx
+            train_X = self.train_data.columns[:i]
+            train_y = self.train_data.columns[i:i+self.n_forecast]
+            valid_X = self.train_data.columns[:i+self.n_forecast]
+            valid_y = self.train_data.columns[i+self.n_forecast:i+2*self.n_forecast]
+            yield train_X, train_y, valid_X, valid_y
 
     @staticmethod
     def mse(y, yhat):
@@ -64,10 +66,6 @@ class CVPredict:
     def loss_func(y, yhat, func):
         return func(y, yhat)
 
-    # def get_actual(self, data):
-    #     # assumes a n_stations x n_obs orientation (i.e. the output of the pipeline) unless self.reduce_test == True
-    #     return pd.Series(data.sum().sum()) if self.reduce_test else data.sum(axis=1)
-
     def get_metrics(self, y, yhat, funcs):
         return pd.DataFrame.from_dict(
             {i[0]: self.loss_func(y, yhat, i[1]) for i in funcs},
@@ -77,27 +75,23 @@ class CVPredict:
 
     def expanding_window_cv(self):
         folds = self.cv_splitter()
-        kpis = []
-        print("conducting expanding window cross-validation...")
+        train_kpis = []
+        valid_kpis = []
         i = 0
-        for train_idx, test_idx in tqdm(folds):
-            if self.gbm and i == 0:
-                i += 1
-                continue
-            train = self.pipeline.fit_transform(self.train_data.loc[:, train_idx])
-            test = self.pipeline.transform(self.train_data.loc[:, test_idx])
+        print("conducting expanding window cross-validation...")
+        for train_X, train_y, valid_X, valid_y in tqdm(folds):
+            train_y = self.train_data.loc[:, train_y]
+            train_X, train_y = self.pipeline.fit_transform(X=self.train_data.loc[:, train_X], y=train_y)
+            valid_y = self.train_data.loc[:, valid_y]
+            valid_X, valid_y = self.pipeline.transform(X=self.train_data.loc[:, valid_X], y=valid_y)
 
-            y = test
-            self.model.fit(train)
+            self.model.fit(train_X, train_y)
+            train_yhat = self.model.predict(train_X)
+            valid_yhat = self.model.predict(valid_X)
 
-            if self.gbm:
-                yhat = self.model.predict(train)
-            else:
-                yhat = self.model.predict(test)
-
-            foldkpis = self.get_metrics(
-                y,
-                yhat,
+            train_foldkpis = self.get_metrics(
+                train_y,
+                train_yhat,
                 (
                     ("mse", self.mse),
                     ("rmse", self.rmse),
@@ -105,23 +99,39 @@ class CVPredict:
                     ("mdape", self.mdape),
                 ),
             )
-            foldkpis.columns = [f"{col}_{i}" for col in foldkpis.columns]
-            kpis.append(foldkpis)
+            valid_foldkpis = self.get_metrics(
+                valid_y,
+                valid_yhat,
+                (
+                    ("mse", self.mse),
+                    ("rmse", self.rmse),
+                    ("mdpe", self.mdpe),
+                    ("mdape", self.mdape),
+                ),
+            )
+            train_foldkpis.columns = [f"{col}_{i}" for col in train_foldkpis.columns]
+            valid_foldkpis.columns = [f"{col}_{i}" for col in valid_foldkpis.columns]
+            train_kpis.append(train_foldkpis)
+            valid_kpis.append(valid_foldkpis)
             i += 1
 
-        self.kpis = pd.concat(kpis, axis=1)
-        self.kpis["fold_mu"] = self.kpis.mean(axis=1)
+        self.train_kpis = pd.concat(train_kpis, axis=1)
+        self.valid_kpis = pd.concat(valid_kpis, axis=1)
+        self.train_kpis["fold_mu"] = self.train_kpis.mean(axis=1)
+        self.valid_kpis["fold_mu"] = self.valid_kpis.mean(axis=1)
 
     def final_predict(self):
         print('predicting on test data...')
-        train = self.pipeline.fit_transform(self.train_data)
-        test = self.pipeline.transform(self.test_data)
-        self.test_y = self.get_actual(test)
-        self.model.fit(train)
-        if self.gbm:
-            self.test_yhat = self.model.predict(train)
-        else:
-            self.test_yhat = self.model.predict(test)
+        train_X = self.train_data.iloc[:, :-self.n_forecast]
+        train_y = self.train_data.iloc[:, -self.n_forecast:]
+        test_X = self.test_data.iloc[:, :-self.n_forecast]
+        test_y = self.test_data.iloc[:, -self.n_forecast:]
+
+        self.train_X, self.train_y = self.pipeline.fit_transform(train_X, train_y)
+        self.test_X, self.test_y = self.pipeline.transform(test_X, test_y)
+
+        self.model.fit(self.train_X, self.train_y)
+        self.test_yhat = self.model.predict(self.test_X)
 
         self.test_kpis = self.get_metrics(self.test_y, self.test_yhat, (("mse", self.mse),
                                                                         ("rmse", self.rmse),
