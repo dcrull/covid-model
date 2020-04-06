@@ -27,7 +27,8 @@ MODEL_ID = 'XGB'
 # MODEL_ID = "prophet"
 
 STEPS = [('pivot_data', PivotData(target=TARGET)),
-         ('make_diff', MakeDiff())]
+         # ('make_diff', MakeDiff()),
+         ]
 
 def make_pipeline(steps=STEPS):
     return Pipeline(steps)
