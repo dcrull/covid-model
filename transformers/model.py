@@ -23,7 +23,7 @@ class Naive:
         for i in tqdm(range(self.n_forecast)):
             yhat.loc[:, f'forecast_{i}'] = self.model
             self.fit(pd.concat([X, yhat], axis=1))
-        return yhat.round()
+        return np.maximum(yhat, 0).round()
 
 class SimpleARIMA:
     def __init__(self, n_forecast, lag_order, degree_of_diff, ma_window, model=ARIMA):
@@ -44,7 +44,7 @@ class SimpleARIMA:
         for i in tqdm(range(self.n_forecast)):
             yhat.loc[:, f'forecast_{i}'] = [model.forecast()[0][0] for model in self.models]
             self.fit(pd.concat([X, yhat], axis=1))
-        return yhat.round()
+        return np.maximum(yhat, 0).round()
 
 class SimpleGBM:
     def __init__(self, n_forecast, model=XGBRegressor, **params):
@@ -65,7 +65,10 @@ class SimpleGBM:
         X = self.col_map(X)
         X = X.loc[:, [col for col in X.columns if col in self.cols]]
         yhat = self.model.predict(X)
-        return yhat.round()
+        yhat = pd.DataFrame(yhat)
+        yhat.index = X.index
+        yhat.columns = [f'forecast_{i}' for i in range(self.n_forecast)]
+        return np.maximum(yhat, 0).round()
 
 class FBProph:
     def __init__(self, n_forecast, model=Prophet):

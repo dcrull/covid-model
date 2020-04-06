@@ -1,13 +1,14 @@
 from sklearn.pipeline import Pipeline
-from transformers.create_ts import CreateTS
+from transformers.feat_eng import PivotData, MakeDiff
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from lib.cv19nyt import df_from_api, nyt_state_api, nyt_county_api
+from utils import plot_mean_ts, heatmap
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
 TARGET = 'cases'
-DATA_API = nyt_county_api
+DATA_API = nyt_state_api
 
 # MODEL = Naive
 # MODEL_PARAMS = {'method':np.mean, 'kwargs':{'axis':1}}
@@ -18,17 +19,18 @@ DATA_API = nyt_county_api
 # MODEL_ID = 'simpleARIMA'
 
 MODEL = SimpleGBM
-MODEL_PARAMS = {'n_jobs':-1}
+MODEL_PARAMS = {'n_estimators':500, 'n_jobs':-1}
 MODEL_ID = 'XGB'
 
 # MODEL = FBProph
 # MODEL_PARAMS = {}
 # MODEL_ID = "prophet"
 
-STEPS = []
+STEPS = [('pivot_data', PivotData(target=TARGET)),
+         ('make_diff', MakeDiff())]
 
-def make_pipeline(STEPS):
-    return Pipeline(STEPS)
+def make_pipeline(steps=STEPS):
+    return Pipeline(steps)
 
 class CVPredict:
     def __init__(
@@ -36,7 +38,7 @@ class CVPredict:
         n_forecast,
         data_api=DATA_API,
         target=TARGET,
-        pipeline=None,
+        pipeline=make_pipeline(),
         model=MODEL,
         model_params = MODEL_PARAMS,
         model_id=MODEL_ID,
@@ -54,7 +56,7 @@ class CVPredict:
 
 
     def __create_ts(self, data):
-        self.ts = data.pivot(index='geoid', columns='date', values=self.target).fillna(0)
+        self.ts = self.pipeline.fit_transform(data)
 
     def __train_holdout_split(self):
         self.train_data = self.ts.iloc[:, :-self.n_forecast*2]
