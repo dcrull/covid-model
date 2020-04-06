@@ -26,7 +26,7 @@
     - run model(s) ensemble models
     - tune
     - eval
-    
+
 ### objectives
 - Predict instances of cases 1, 3, 7 days out
 - Predict instances of death 1, 3, 7 days out
