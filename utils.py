@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
+from matplotlib import pyplot,colors
 
 def get_clusters(data, model, **kwargs):
     return model(**kwargs).fit(data)
@@ -25,3 +26,8 @@ def trim_leading(data, thresh):
         else:
             idx += 1
     return data[idx:]
+
+def heatmap(df, target, sort_col, norm=colors.LogNorm(vmin=1), **kwargs):
+    pyplot.imshow(df.sort_values(sort_col, ascending=False),norm=norm, aspect='auto', **kwargs)
+    pyplot.title(f'heat map of {target} sorted on {sort_col}')
+    pyplot.show()

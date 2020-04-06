@@ -1,8 +1,10 @@
 from statsmodels.tsa.arima_model import ARIMA
 from functools import partial
 import pandas as pd
+import numpy as np
 from xgboost import XGBRegressor
 from sklearn.multioutput import MultiOutputRegressor as mor
+from multiprocessing import Pool, cpu_count
 from fbprophet import Prophet
 from tqdm import tqdm
 
@@ -21,7 +23,7 @@ class Naive:
         for i in tqdm(range(self.n_forecast)):
             yhat.loc[:, f'forecast_{i}'] = self.model
             self.fit(pd.concat([X, yhat], axis=1))
-        return yhat
+        return yhat.round()
 
 class SimpleARIMA:
     def __init__(self, n_forecast, lag_order, degree_of_diff, ma_window, model=ARIMA):
@@ -42,7 +44,7 @@ class SimpleARIMA:
         for i in tqdm(range(self.n_forecast)):
             yhat.loc[:, f'forecast_{i}'] = [model.forecast()[0][0] for model in self.models]
             self.fit(pd.concat([X, yhat], axis=1))
-        return yhat
+        return yhat.round()
 
 class SimpleGBM:
     def __init__(self, n_forecast, model=XGBRegressor, **params):
@@ -63,30 +65,31 @@ class SimpleGBM:
         X = self.col_map(X)
         X = X.loc[:, [col for col in X.columns if col in self.cols]]
         yhat = self.model.predict(X)
-        return yhat
-
+        return yhat.round()
 
 class FBProph:
     def __init__(self, n_forecast, model=Prophet):
         self.model = model
         self.n_forecast = n_forecast
 
-    def get_row(self, data, idx):
-        rowdata = data.iloc[idx, :].reset_index()
+    def get_forecast(self, rowdata):
+        rowdata = rowdata.reset_index()
         rowdata.columns = ["ds", "y"]
-        return rowdata
-
-    def row_predict(self, model):
-        future = model.make_future_dataframe(periods=self.n_forecast)
-        forecast = model.predict(future)
+        fit_model = self.model().fit(rowdata)
+        future = fit_model.make_future_dataframe(periods=self.n_forecast)
+        forecast = fit_model.predict(future)
         return pd.Series(forecast.iloc[-self.n_forecast:, :]['yhat'])
 
     def fit(self, X, y=None):
-        self.models = [self.model().fit(self.get_row(X, i)) for i in range(X.shape[0])]
         return self
 
     def predict(self, X):
-        yhat = pd.DataFrame(index=X.index, columns=[f'forecast_{i}' for i in self.n_forecast])
-        for i, model in enumerate(self.models):
-            yhat.iloc[i, :] = self.row_predict(model)
-        return yhat
+        p = Pool(cpu_count())
+        yhat = list(
+            tqdm(p.imap(self.get_forecast, [row for i,row in X.iterrows()]), total=X.shape[0]))
+        p.close()
+        p.join()
+        yhat = pd.DataFrame(yhat)
+        yhat.index = X.index
+        yhat.columns = [f'forecast_{i}' for i in range(self.n_forecast)]
+        return np.maximum(yhat, 0).round()

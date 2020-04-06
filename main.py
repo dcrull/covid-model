@@ -4,22 +4,22 @@ from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from lib.cv19nyt import df_from_api, nyt_state_api, nyt_county_api
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
 
-GEO = 'geoid'
 TARGET = 'cases'
 DATA_API = nyt_county_api
 
-MODEL = Naive
-MODEL_PARAMS = {'method':np.mean, 'kwargs':{'axis':1}}
-MODEL_ID = 'naive_model'
+# MODEL = Naive
+# MODEL_PARAMS = {'method':np.mean, 'kwargs':{'axis':1}}
+# MODEL_ID = 'naive_model'
 
 # MODEL = SimpleARIMA
 # MODEL_PARAMS = {'lag_order':7, 'degree_of_diff':0, 'ma_window':0}
 # MODEL_ID = 'simpleARIMA'
 
-# MODEL = SimpleGBM
-# MODEL_PARAMS = {'n_jobs'=-1}
-# MODEL_ID = 'XGB'
+MODEL = SimpleGBM
+MODEL_PARAMS = {'n_jobs':-1}
+MODEL_ID = 'XGB'
 
 # MODEL = FBProph
 # MODEL_PARAMS = {}
@@ -40,6 +40,7 @@ class CVPredict:
         model=MODEL,
         model_params = MODEL_PARAMS,
         model_id=MODEL_ID,
+        kfolds=7
     ):
         self.n_forecast = n_forecast
         self.target = target
@@ -47,6 +48,7 @@ class CVPredict:
         self.pipeline = pipeline
         self.model = model(n_forecast=self.n_forecast, **model_params)
         self.model_id = model_id
+        self.kfolds = kfolds
         self.__create_ts(self.data)
         self.__train_holdout_split()
 
@@ -71,18 +73,26 @@ class CVPredict:
 
     @staticmethod
     def mse(y, yhat):
+        y = np.asarray(y)
+        yhat = np.asarray(yhat)
         return np.mean((y - yhat) ** 2)
 
     @staticmethod
     def rmse(y, yhat):
-        return np.sqrt(np.mean((y - yhat) ** 2))
+        y = np.asarray(y)
+        yhat = np.asarray(yhat)
+        return np.sqrt(np.mean((np.asarray(y) - np.asarray(yhat)) ** 2))
 
     @staticmethod
     def mdpe(y, yhat):
+        y = np.asarray(y)
+        yhat = np.asarray(yhat)
         return np.nanmedian((y - yhat) * 100.0 / y)
 
     @staticmethod
     def mdape(y, yhat):
+        y = np.asarray(y)
+        yhat = np.asarray(yhat)
         return np.nanmedian(abs(y - yhat) * 100.0 / y)
 
     @staticmethod
@@ -97,7 +107,7 @@ class CVPredict:
         )
 
     def expanding_window_cv(self):
-        folds = self.cv_splitter()
+        folds = self.cv_splitter(k=self.kfolds)
         train_kpis = []
         valid_kpis = []
         i = 0
@@ -169,6 +179,15 @@ class CVPredict:
         with open(opath, 'wb') as f:
             dill.dump(obj, f)
         print(f'key model and data attributes and output from test saved at {opath}')
+
+def testing():
+    cv = CVPredict(n_forecast=1)
+    cv.train_X = cv.train_data.iloc[:, :-cv.n_forecast]
+    cv.train_y = cv.train_data.iloc[:, -cv.n_forecast:]
+    cv.test_X = cv.test_data.iloc[:, :-cv.n_forecast]
+    cv.test_y = cv.test_data.iloc[:, -cv.n_forecast:]
+    return cv
+
 
 if __name__=='__main__':
     obj = TSPredict()
