@@ -1,8 +1,7 @@
 from sklearn.base import BaseEstimator, TransformerMixin
 
-class CreateTS(BaseEstimator, TransformerMixin):
-    def __init__(self, response_var):
-        self.response_var = response_var
+class TSDiff(BaseEstimator, TransformerMixin):
+    def __init__(self):
 
     def fit(self, X):
         return self
