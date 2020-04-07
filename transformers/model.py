@@ -1,3 +1,4 @@
+from sklearn.base import BaseEstimator, TransformerMixin
 from statsmodels.tsa.arima_model import ARIMA
 from functools import partial
 import pandas as pd
@@ -8,7 +9,7 @@ from multiprocessing import Pool, cpu_count
 from fbprophet import Prophet
 from tqdm import tqdm
 
-class Naive:
+class Naive(BaseEstimator, TransformerMixin):
     def __init__(self, method, kwargs, n_forecast=1):
         self.method = method
         self.kwargs = kwargs
@@ -25,7 +26,7 @@ class Naive:
             self.fit(pd.concat([X, yhat], axis=1))
         return np.maximum(yhat, 0).round()
 
-class SimpleARIMA:
+class SimpleARIMA(BaseEstimator, TransformerMixin):
     def __init__(self, lag_order, degree_of_diff, ma_window, n_forecast=1, model=ARIMA):
         self.lag_order = lag_order
         self.degree_of_diff = degree_of_diff
@@ -46,7 +47,7 @@ class SimpleARIMA:
             self.fit(pd.concat([X, yhat], axis=1))
         return np.maximum(yhat, 0).round()
 
-class SimpleGBM:
+class SimpleGBM(BaseEstimator, TransformerMixin):
     def __init__(self, n_forecast=1, model=XGBRegressor, **params):
         self.model = mor(model(**params), n_jobs=-1)
         self.n_forecast = n_forecast
@@ -70,7 +71,10 @@ class SimpleGBM:
         yhat.columns = [f'forecast_{i}' for i in range(self.n_forecast)]
         return np.maximum(yhat, 0).round()
 
-class FBProph:
+    def transform(self, X, y=None):
+        return self.predict(X)
+
+class FBProph(BaseEstimator, TransformerMixin):
     def __init__(self, n_forecast=1, model=Prophet):
         self.model = model
         self.n_forecast = n_forecast

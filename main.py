@@ -6,7 +6,6 @@ from config import NYT_COUNTY_URL, NYT_STATE_URL
 from plotting import plot_mean_ts
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
-from transformers.split import SplitData
 from transformers.transform_ts import TSRate, GF
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from transformers.clean import DropNA
@@ -18,7 +17,6 @@ PREP_STEPS = [
 ]
 
 FEAT_STEPS = [
-    ('split_data', SplitData()),
     ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
     # ('gf_s1.5', GF(sigma=0.5)),
     ('dropna', DropNA())
@@ -42,31 +40,36 @@ class CVPredict:
         self.nyt_county_url = nyt_county_url
         self.nyt_state_url = nyt_state_url
         self.prep_pipe = Pipeline(prep_steps)
-        self.feat_pipe = Pipeline(feat_steps)
+        self.feat_steps = feat_steps
         self.models = models
         self.__set_forecast__(n_forecast)
 
     def __set_forecast__(self, n_forecast):
         self.n_forecast = n_forecast
-        self.feat_pipe.set_params(split_data__n_forecast=n_forecast)
         for k,v in self.models.items():
             v.n_forecast = n_forecast
             self.models[k] = v
 
+    def make_model_pipe(self, model_id):
+        self.model_pipeline = Pipeline(self.feat_steps + [(model_id, self.models[model_id])])
+
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
 
+    def split_data(self, data):
+        return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
+
     def data_prep(self, urlpath):
         data = self.load_nyt(urlpath)
-        data = self.prep_pipe.fit_transform(data)
-        in_sample, out_sample = self.feat_pipe.named_steps['split_data'].fit_transform(data)
+        data = self.prep_pipe.transform(data)
+        in_sample, out_sample = self.split_data(data)
         return in_sample, out_sample
 
-    def fit_data(self, data, model_id):
-        X, y = self.feat_pipe.fit_transform(data)
-        return self.models[model_id].fit(X, y)
+    def run_inference(self, data, model_pipeline):
+        X, y = self.split_data(data)
+        trainy = model_pipeline.fit_predict(X, y)
+        return
 
-        # return fit_model
-        # self.yhat = fit_model.predict(self.train)
-
+        # X = self.feat_pipe.fit_transform(X)
+        # self.fit_model = self.models[model_id].fit(X, y)
 
