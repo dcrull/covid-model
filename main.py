@@ -6,6 +6,7 @@ from config import NYT_COUNTY_URL, NYT_STATE_URL
 from plotting import plot_mean_ts
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
+from transformers.split import SplitData
 from transformers.transform_ts import TSRate, GF
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from transformers.clean import DropNA
@@ -17,11 +18,11 @@ PREP_STEPS = [
 ]
 
 FEAT_STEPS = [
+    ('split_data', SplitData(n_forecast=1)),
     ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
     # ('gf_s1.5', GF(sigma=0.5)),
     ('dropna', DropNA())
 ]
-
 #TODO: other transformations (log, etc)
 
 MODELS = {'naive':partial(Naive, method=np.mean, kwargs={'axis':1}),
@@ -48,15 +49,18 @@ class CVPredict:
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
 
-    def get_holdout_data(self, data):
+    def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
 
-    def run_inference(self, urlpath, model_id):
+    def run_data_prep(self, urlpath):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.fit_transform(data)
-        self.in_sample, self.y = self.get_holdout_data(data)
-        self.train = self.feat_pipe.transform(self.in_sample)
-        X, y = self.get_holdout_data(self.train)
+        self.in_sample, self.out_sample = self.split_data(data)
+
+    def fit_data(self, data, model_id):
+        X, y = self.split_data(data)
+        self.train = self.feat_pipe.transform(data)
+
         X = self.feat_pipe.fit_transform(X)
         fit_model = self.models[model_id](n_forecast=self.n_forecast).fit(X, y)
         self.yhat = fit_model.predict(self.train)

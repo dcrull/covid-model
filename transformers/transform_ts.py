@@ -23,13 +23,13 @@ class TSRate(BaseEstimator, TransformerMixin):
         if self.get_dxdy: X /= self.periods
         return X.iloc[:, ::self.direction]
 
-    def fit(self, X):
+    def fit(self, X, y):
         return self
 
-    def transform(self, X):
+    def transform(self, X, y):
         for i in range(self.order):
             X = self.process(X)
-        return X
+        return X, y
 
 class GF(BaseEstimator, TransformerMixin):
     '''
@@ -38,8 +38,8 @@ class GF(BaseEstimator, TransformerMixin):
     def __init__(self, **kwargs):
         self.filter = partial(gf, **kwargs)
 
-    def fit(self, X):
+    def fit(self, X, y):
         return self
 
-    def transform(self, X):
-        return pd.DataFrame(self.filter(X), index=X.index, columns=X.columns)
+    def transform(self, X, y):
+        return pd.DataFrame(self.filter(X), index=X.index, columns=X.columns), y
