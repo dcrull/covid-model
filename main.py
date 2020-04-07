@@ -3,6 +3,7 @@ import numpy as np
 from functools import partial
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL
+from plotting import plot_mean_ts
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
 from transformers.transform_ts import TSRate, GF
@@ -16,8 +17,8 @@ PREP_STEPS = [
 ]
 
 FEAT_STEPS = [
-    ('first_diff', TSRate()),
-    # ('gf_s1.5', GF(sigma=1.5)),
+    ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
+    # ('gf_s1.5', GF(sigma=0.5)),
     ('dropna', DropNA())
 ]
 
@@ -45,21 +46,17 @@ class CVPredict:
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
 
-    def get_ts(self, data):
-        return self.prep_pipe.fit_transform(data)
-
     def get_holdout_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
 
-    def data_prep(self, data):
-        return self.feat_pipe.fit_transform(data)
-
-    def process(self, urlpath, model_id):
-        data = self.get_ts(self.load_nyt(urlpath))
-        X, y = self.get_holdout_data(data)
-        X = self.data_prep(X)
+    def run_inference(self, urlpath, model_id):
+        data = self.load_nyt(urlpath)
+        data = self.prep_pipe.fit_transform(data)
+        self.in_sample, self.y = self.get_holdout_data(data)
+        self.train = self.feat_pipe.transform(self.in_sample)
+        X, y = self.get_holdout_data(self.train)
+        X = self.feat_pipe.fit_transform(X)
         fit_model = self.models[model_id](n_forecast=self.n_forecast).fit(X, y)
-        yhat = fit_model.predict(y)
-        return yhat
+        self.yhat = fit_model.predict(self.train)
 
 
