@@ -1,10 +1,13 @@
 import pandas as pd
+import numpy as np
+from functools import partial
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
 from transformers.transform_ts import TSRate, GF
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
+from transformers.clean import DropNA
 
 
 PREP_STEPS = [
@@ -15,12 +18,13 @@ PREP_STEPS = [
 FEAT_STEPS = [
     ('first_diff', TSRate()),
     # ('gf_s1.5', GF(sigma=1.5)),
+    ('dropna', DropNA())
 ]
 
-MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
-          'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
-          'gbm':SimpleGBM(n_estimators=500, n_jobs=-1),
-          'prophet':FBProph()}
+MODELS = {'naive':partial(Naive, method=np.mean, kwargs={'axis':1}),
+          'arima':partial(SimpleARIMA, lag_order=7, degree_of_diff=0, ma_window=0),
+          'gbm':partial(SimpleGBM, n_estimators=500, n_jobs=-1),
+          'prophet':partial(FBProph,)}
 
 class CVPredict:
     def __init__(self,
@@ -32,13 +36,13 @@ class CVPredict:
                  models=MODELS,
                  ):
         self.n_forecast = n_forecast
-        self.covid_us_county = self.__load_nyt(nyt_county_url)
-        self.covid_us_state = self.__load_nyt(nyt_state_url)
+        self.nyt_county_url = nyt_county_url
+        self.nyt_state_url = nyt_state_url
         self.prep_pipe = Pipeline(prep_steps)
         self.feat_pipe = Pipeline(feat_steps)
         self.models = models
 
-    def __load_nyt(self, url):
+    def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
 
     def get_ts(self, data):
@@ -50,10 +54,12 @@ class CVPredict:
     def data_prep(self, data):
         return self.feat_pipe.fit_transform(data)
 
-    def process(self, data, model):
-        X, y = self.get_holdout_data(self.get_ts(data))
+    def process(self, urlpath, model_id):
+        data = self.get_ts(self.load_nyt(urlpath))
+        X, y = self.get_holdout_data(data)
         X = self.data_prep(X)
-        self.models[model].fit(X, y)
-        yhat = self.models.predict(y)
+        fit_model = self.models[model_id](n_forecast=self.n_forecast).fit(X, y)
+        yhat = fit_model.predict(y)
+        return yhat
 
 

@@ -1,9 +1,6 @@
 from sklearn.base import BaseEstimator, TransformerMixin
 
 class PrepNYT(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        pass
-
     def get_geoid(self, X):
         # nytimes makes certain exceptions so unique geoid is needed
         # https://github.com/nytimes/covid-19-data#geographic-exceptions
