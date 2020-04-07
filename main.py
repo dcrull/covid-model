@@ -18,17 +18,17 @@ PREP_STEPS = [
 ]
 
 FEAT_STEPS = [
-    ('split_data', SplitData(n_forecast=1)),
+    ('split_data', SplitData()),
     ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
     # ('gf_s1.5', GF(sigma=0.5)),
     ('dropna', DropNA())
 ]
 #TODO: other transformations (log, etc)
 
-MODELS = {'naive':partial(Naive, method=np.mean, kwargs={'axis':1}),
-          'arima':partial(SimpleARIMA, lag_order=7, degree_of_diff=0, ma_window=0),
-          'gbm':partial(SimpleGBM, n_estimators=500, n_jobs=-1),
-          'prophet':partial(FBProph,)}
+MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
+          'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
+          'gbm':SimpleGBM(n_estimators=500, n_jobs=-1),
+          'prophet':FBProph()}
 
 class CVPredict:
     def __init__(self,
@@ -39,30 +39,34 @@ class CVPredict:
                  feat_steps=FEAT_STEPS,
                  models=MODELS,
                  ):
-        self.n_forecast = n_forecast
         self.nyt_county_url = nyt_county_url
         self.nyt_state_url = nyt_state_url
         self.prep_pipe = Pipeline(prep_steps)
         self.feat_pipe = Pipeline(feat_steps)
         self.models = models
+        self.__set_forecast__(n_forecast)
+
+    def __set_forecast__(self, n_forecast):
+        self.n_forecast = n_forecast
+        self.feat_pipe.set_params(split_data__n_forecast=n_forecast)
+        for k,v in self.models.items():
+            v.n_forecast = n_forecast
+            self.models[k] = v
 
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
 
-    def split_data(self, data):
-        return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
-
-    def run_data_prep(self, urlpath):
+    def data_prep(self, urlpath):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.fit_transform(data)
-        self.in_sample, self.out_sample = self.split_data(data)
+        in_sample, out_sample = self.feat_pipe.named_steps['split_data'].fit_transform(data)
+        return in_sample, out_sample
 
     def fit_data(self, data, model_id):
-        X, y = self.split_data(data)
-        self.train = self.feat_pipe.transform(data)
+        X, y = self.feat_pipe.fit_transform(data)
+        return self.models[model_id].fit(X, y)
 
-        X = self.feat_pipe.fit_transform(X)
-        fit_model = self.models[model_id](n_forecast=self.n_forecast).fit(X, y)
-        self.yhat = fit_model.predict(self.train)
+        # return fit_model
+        # self.yhat = fit_model.predict(self.train)
 
 

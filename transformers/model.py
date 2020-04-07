@@ -9,7 +9,7 @@ from fbprophet import Prophet
 from tqdm import tqdm
 
 class Naive:
-    def __init__(self, method, kwargs, n_forecast):
+    def __init__(self, method, kwargs, n_forecast=1):
         self.method = method
         self.kwargs = kwargs
         self.n_forecast = n_forecast
@@ -26,7 +26,7 @@ class Naive:
         return np.maximum(yhat, 0).round()
 
 class SimpleARIMA:
-    def __init__(self, n_forecast, lag_order, degree_of_diff, ma_window, model=ARIMA):
+    def __init__(self, lag_order, degree_of_diff, ma_window, n_forecast=1, model=ARIMA):
         self.lag_order = lag_order
         self.degree_of_diff = degree_of_diff
         self.ma_window = ma_window
@@ -47,7 +47,7 @@ class SimpleARIMA:
         return np.maximum(yhat, 0).round()
 
 class SimpleGBM:
-    def __init__(self, n_forecast, model=XGBRegressor, **params):
+    def __init__(self, n_forecast=1, model=XGBRegressor, **params):
         self.model = mor(model(**params), n_jobs=-1)
         self.n_forecast = n_forecast
 
@@ -71,7 +71,7 @@ class SimpleGBM:
         return np.maximum(yhat, 0).round()
 
 class FBProph:
-    def __init__(self, n_forecast, model=Prophet):
+    def __init__(self, n_forecast=1, model=Prophet):
         self.model = model
         self.n_forecast = n_forecast
 

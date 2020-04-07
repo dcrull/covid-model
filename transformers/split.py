@@ -1,7 +1,7 @@
 from sklearn.base import BaseEstimator, TransformerMixin
 
 class SplitData(BaseEstimator, TransformerMixin):
-    def __init__(self, n_forecast):
+    def __init__(self, n_forecast=1):
         self.n_forecast = n_forecast
 
     def fit(self, X, y=None):
