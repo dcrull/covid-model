@@ -22,6 +22,8 @@ FEAT_STEPS = [
     ('dropna', DropNA())
 ]
 
+#TODO: other transformations (log, etc)
+
 MODELS = {'naive':partial(Naive, method=np.mean, kwargs={'axis':1}),
           'arima':partial(SimpleARIMA, lag_order=7, degree_of_diff=0, ma_window=0),
           'gbm':partial(SimpleGBM, n_estimators=500, n_jobs=-1),
