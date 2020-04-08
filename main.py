@@ -3,6 +3,7 @@ import numpy as np
 from functools import partial
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL
+from utils import mse, rmse, mdpe, mdape
 from plotting import plot_mean_ts
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
@@ -56,6 +57,17 @@ class CVPredict:
     def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
 
+    @staticmethod
+    def loss_func(y, yhat, func):
+        return func(y, yhat)
+
+    def get_metrics(self, y, yhat, model_id, funcs):
+        return pd.DataFrame.from_dict(
+            {i[0]: self.loss_func(y, yhat, i[1]) for i in funcs},
+            orient="index",
+            columns=[f"{model_id}_test"],
+        )
+
     def data_prep(self, urlpath):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.transform(data)
@@ -63,18 +75,32 @@ class CVPredict:
         return in_sample, out_sample
 
     #TODO: add model as step in pipeline
-    def fit_model(self, data, model_id):
-        X, y = self.split_data(data)
+    def fit(self, train_data, model_id):
+        X, y = self.split_data(train_data)
         X = self.feature_pipe.transform(X)
         return self.models[model_id].fit(X, y)
 
-    def final_predict(self, urlpath, model_id):
-        in_sample, self.test_y = self.data_prep(urlpath)
-        fit_model = self.fit_model(in_sample, model_id)
-        self.test_X = self.feature_pipe.transform(in_sample)
-        self.test_yhat = fit_model.predict(self.test_X)
+    def predict(self, input_data, fitted_model):
+        X = self.feature_pipe.transform(input_data)
+        return fitted_model.predict(X)
 
+    def run_inference(self, in_sample, y, model_id):
+        fitted_model = self.fit(in_sample, model_id)
+        yhat = self.predict(in_sample, fitted_model)
+        foldkpis = self.get_metrics(y, yhat, model_id, (('mse', mse),
+                                                        ('rmse', rmse),
+                                                        ('mdpe', mdpe),
+                                                        ('mdape', mdape)))
+        return yhat, foldkpis
 
-        # X = self.feat_pipe.fit_transform(X)
-        # self.fit_model = self.models[model_id].fit(X, y)
+    def run_cvfold(self, data, model_id, kstep, foldct, idx):
+        train, y = self.split_data(data.iloc[:, idx:idx + kstep])
+        yhat, foldkpis = self.run_inference(train, y, model_id)
+        foldkpis.columns = [f"{col}_{foldct}" for col in foldkpis.columns]
+        return train, y, yhat, foldkpis
 
+    def expanding_window(self, k, data, model_id):
+        ncols = data.shape[1]
+        kstep = ncols // k
+
+        return {f'fold_{ct}': self.run_cvfold(data, model_id, kstep, ct, idx) for ct, idx in enumerate(np.arange(ncols, step=kstep))}
