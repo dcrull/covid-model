@@ -74,33 +74,22 @@ class CVPredict:
         in_sample, out_sample = self.split_data(data)
         return in_sample, out_sample
 
-    #TODO: add model as step in pipeline
-    def fit(self, train_data, model_id):
+    #TODO: streamline as sklearn pipeline
+    def transform_fit(self, train_data, model_id):
         X, y = self.split_data(train_data)
         X = self.feature_pipe.transform(X)
         return self.models[model_id].fit(X, y)
 
-    def predict(self, input_data, fitted_model):
-        X = self.feature_pipe.transform(input_data)
+    def transform_predict(self, X, fitted_model):
+        X = self.feature_pipe.transform(X)
         return fitted_model.predict(X)
 
-    def run_inference(self, in_sample, y, model_id):
-        fitted_model = self.fit(in_sample, model_id)
-        yhat = self.predict(in_sample, fitted_model)
-        foldkpis = self.get_metrics(y, yhat, model_id, (('mse', mse),
-                                                        ('rmse', rmse),
-                                                        ('mdpe', mdpe),
-                                                        ('mdape', mdape)))
-        return yhat, foldkpis
-
-    def run_cvfold(self, data, model_id, kstep, foldct, idx):
-        train, y = self.split_data(data.iloc[:, idx:idx + kstep])
-        yhat, foldkpis = self.run_inference(train, y, model_id)
-        foldkpis.columns = [f"{col}_{foldct}" for col in foldkpis.columns]
-        return train, y, yhat, foldkpis
+    def run_cvfold(self, data, model_id, kstep, idx):
+        X, y = self.split_data(data.iloc[:, idx:idx + kstep])
+        fitted_model = self.transform_fit(X, model_id)
+        return y, self.transform_predict(X, fitted_model)
 
     def expanding_window(self, k, data, model_id):
         ncols = data.shape[1]
         kstep = ncols // k
-
-        return {f'fold_{ct}': self.run_cvfold(data, model_id, kstep, ct, idx) for ct, idx in enumerate(np.arange(ncols, step=kstep))}
+        return {f'fold_{ct}': self.run_cvfold(data, model_id, kstep, idx) for idx in np.arange(ncols, step=kstep)}

@@ -3,6 +3,11 @@ from sklearn.cluster import KMeans
 from matplotlib import pyplot,colors
 import pandas as pd
 
+def cv_fold_error(cvresults):
+    pass
+
+
+
 def get_clusters(data, model, **kwargs):
     return model(**kwargs).fit(data)
 
