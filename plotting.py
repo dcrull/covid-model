@@ -34,9 +34,9 @@ def heatmap(df, target, sort_col, norm=colors.LogNorm(vmin=1), **kwargs):
     pyplot.show()
 
 def plot_mean_ts(obj, target):
-    X = pd.concat([obj.in_sample, obj.y], axis=1)
-    X2 = pd.concat([obj.in_sample, obj.yhat], axis=1)
-    X.columns = list(obj.in_sample.columns) + list(obj.y.columns)
+    X = pd.concat([obj.test_X, obj.test_y], axis=1)
+    X2 = pd.concat([obj.test_X, obj.test_yhat], axis=1)
+    X.columns = list(obj.test_X.columns) + list(obj.test_y.columns)
     X2.columns = X.columns
 
     X.mean().plot(label='actual;')

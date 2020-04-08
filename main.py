@@ -40,7 +40,7 @@ class CVPredict:
         self.nyt_county_url = nyt_county_url
         self.nyt_state_url = nyt_state_url
         self.prep_pipe = Pipeline(prep_steps)
-        self.feat_steps = feat_steps
+        self.feature_pipe = Pipeline(feat_steps)
         self.models = models
         self.__set_forecast__(n_forecast)
 
@@ -49,9 +49,6 @@ class CVPredict:
         for k,v in self.models.items():
             v.n_forecast = n_forecast
             self.models[k] = v
-
-    def make_model_pipe(self, model_id):
-        self.model_pipeline = Pipeline(self.feat_steps + [(model_id, self.models[model_id])])
 
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
@@ -65,10 +62,18 @@ class CVPredict:
         in_sample, out_sample = self.split_data(data)
         return in_sample, out_sample
 
-    def run_inference(self, data, model_pipeline):
+    #TODO: add model as step in pipeline
+    def fit_model(self, data, model_id):
         X, y = self.split_data(data)
-        trainy = model_pipeline.fit_predict(X, y)
-        return
+        X = self.feature_pipe.transform(X)
+        return self.models[model_id].fit(X, y)
+
+    def final_predict(self, urlpath, model_id):
+        in_sample, self.test_y = self.data_prep(urlpath)
+        fit_model = self.fit_model(in_sample, model_id)
+        self.test_X = self.feature_pipe.transform(in_sample)
+        self.test_yhat = fit_model.predict(self.test_X)
+
 
         # X = self.feat_pipe.fit_transform(X)
         # self.fit_model = self.models[model_id].fit(X, y)

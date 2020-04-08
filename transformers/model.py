@@ -9,7 +9,7 @@ from multiprocessing import Pool, cpu_count
 from fbprophet import Prophet
 from tqdm import tqdm
 
-class Naive(BaseEstimator, TransformerMixin):
+class Naive:
     def __init__(self, method, kwargs, n_forecast=1):
         self.method = method
         self.kwargs = kwargs
@@ -26,7 +26,7 @@ class Naive(BaseEstimator, TransformerMixin):
             self.fit(pd.concat([X, yhat], axis=1))
         return np.maximum(yhat, 0).round()
 
-class SimpleARIMA(BaseEstimator, TransformerMixin):
+class SimpleARIMA:
     def __init__(self, lag_order, degree_of_diff, ma_window, n_forecast=1, model=ARIMA):
         self.lag_order = lag_order
         self.degree_of_diff = degree_of_diff
@@ -47,7 +47,7 @@ class SimpleARIMA(BaseEstimator, TransformerMixin):
             self.fit(pd.concat([X, yhat], axis=1))
         return np.maximum(yhat, 0).round()
 
-class SimpleGBM(BaseEstimator, TransformerMixin):
+class SimpleGBM:
     def __init__(self, n_forecast=1, model=XGBRegressor, **params):
         self.model = mor(model(**params), n_jobs=-1)
         self.n_forecast = n_forecast
@@ -71,10 +71,7 @@ class SimpleGBM(BaseEstimator, TransformerMixin):
         yhat.columns = [f'forecast_{i}' for i in range(self.n_forecast)]
         return np.maximum(yhat, 0).round()
 
-    def transform(self, X, y=None):
-        return self.predict(X)
-
-class FBProph(BaseEstimator, TransformerMixin):
+class FBProph:
     def __init__(self, n_forecast=1, model=Prophet):
         self.model = model
         self.n_forecast = n_forecast
