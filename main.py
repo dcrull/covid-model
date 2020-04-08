@@ -75,8 +75,7 @@ class CVPredict:
         return in_sample, out_sample
 
     #TODO: streamline as sklearn pipeline
-    def transform_fit(self, train_data, model_id):
-        X, y = self.split_data(train_data)
+    def transform_fit(self, X, y, model_id):
         X = self.feature_pipe.transform(X)
         return self.models[model_id].fit(X, y)
 
@@ -86,10 +85,16 @@ class CVPredict:
 
     def run_cvfold(self, data, model_id, kstep, idx):
         X, y = self.split_data(data.iloc[:, idx:idx + kstep])
-        fitted_model = self.transform_fit(X, model_id)
-        return y, self.transform_predict(X, fitted_model)
+        fold_X, fold_y = self.split_data(X)
+        fitted_model = self.transform_fit(fold_X, fold_y, model_id)
+        return X, y, self.transform_predict(X, fitted_model)
 
     def expanding_window(self, k, data, model_id):
         ncols = data.shape[1]
         kstep = ncols // k
-        return {f'fold_{ct}': self.run_cvfold(data, model_id, kstep, idx) for idx in np.arange(ncols, step=kstep)}
+        return {f'fold_{ct}': self.run_cvfold(data, model_id, kstep, idx) for ct, idx in enumerate(np.arange(ncols, step=kstep))}
+
+    #TODO append X + y, X + yhat
+    #TODO plots
+    #TODO eval
+    #TODO enrich
