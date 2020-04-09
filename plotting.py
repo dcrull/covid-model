@@ -42,7 +42,7 @@ def plot_ts(data, idx=None, **kwargs):
     if idx is None:
         plot_data = data.median()
     elif isinstance(idx, int):
-        plot_data = data.sample(idx).T
+        plot_data = data.sample(idx, random_state=32).T
     elif isinstance(idx, str):
         plot_data = data.loc[idx, :]
     plot_data.plot(**kwargs)

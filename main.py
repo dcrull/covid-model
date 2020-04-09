@@ -112,9 +112,8 @@ class CVPredict:
             model_id, fold_id = k.split('__')
             plot_ts(v[2], idx=idx, c='indianred', lw=3.5, label=fold_id+' forecast')
 
+        title_suffix = 'median across obs
         if isinstance(idx, str): title_suffix = idx
-        elif isinstance(idx, int): title_suffix = f'{idx} random obs'
-        else: title_suffix = 'median across obs'
         plt.title(f'actual vs {model_id} predicted {target} by cross-validation fold: {title_suffix}')
         plt.legend()
         plt.show()
