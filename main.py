@@ -1,3 +1,4 @@
+import datetime
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,7 +20,7 @@ PREP_STEPS = [
 ]
 
 FEAT_STEPS = [
-    ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
+    ('first_diff', TSRate(get_dxdy=False, periods=3, order=1)),
     # ('gf_s1.5', GF(sigma=0.5)),
     ('dropna', DropNA())
 ]
@@ -107,7 +108,7 @@ class CVPredict:
 
         title_suffix = 'median across obs'
         if isinstance(idx, str): title_suffix = idx
-        plt.title(f'actual vs {model_id} predicted {target} by cross-validation fold: {title_suffix}')
+        plt.title(f'actual and {model_id} predicted {target} by cross-validation fold: {title_suffix}')
         plt.legend()
         plt.show()
         return
@@ -115,11 +116,31 @@ class CVPredict:
     def fold_error(self, results, err_func):
         return [err_func(v[1], v[2]).mean().mean() for v in results.values()]
 
+    def final_plots_and_error(self, X, y, yhat, idx, target, err_func):
+        err = err_func(y, yhat).mean().mean()
+
+        fig = plt.figure()
+        plot_ts(pd.concat([X, y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
+        label_suffix = 'median across obs'
+        if isinstance(idx, str): label_suffix = idx
+        plot_ts(yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
+        plt.title(f'actual and predicted {target}; err: {err:.4f}')
+
+        fig = plt.figure()
+        heatmap(df=pd.concat([X, yhat], axis=1), target=target, sort_col=X.columns[-1], forecast_line=self.n_forecast)
+        return
+
+    def out_of_sample_predict(self, urlpath, model_id):
+        data = self.load_nyt(urlpath)
+        data = self.prep_pipe.transform(data)
+        X, y = self.split_data(data)
+        fitted_model = self.transform_fit(X, y, model_id)
+        yhat = self.transform_predict(data, fitted_model)
+        yhat.columns = pd.date_range(start=data.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
+        return data, yhat
+
 def testing():
     cv = CVPredict(n_forecast=3)
     in_sample, out_sample = cv.data_prep(cv.nyt_county_url)
     cvout = cv.expanding_window(5, in_sample, 'gbm')
     return cv, in_sample, out_sample, cvout
-    #TODO plots
-    #TODO eval
-    #TODO enrich
