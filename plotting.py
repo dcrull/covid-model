@@ -38,9 +38,9 @@ def heatmap(df, target, sort_col, norm=colors.LogNorm(vmin=1), **kwargs):
     pyplot.title(f'heat map of {target} sorted on {sort_col}')
     pyplot.show()
 
-def plot_mean_ts(data, idx=None, **kwargs):
+def plot_ts(data, idx=None, **kwargs):
     if idx is None:
-        plot_data = data.mean()
+        plot_data = data.median()
     elif isinstance(idx, int):
         plot_data = data.sample(idx).T
     elif isinstance(idx, str):
