@@ -38,14 +38,12 @@ def heatmap(df, target, sort_col, norm=colors.LogNorm(vmin=1), **kwargs):
     pyplot.title(f'heat map of {target} sorted on {sort_col}')
     pyplot.show()
 
-def plot_mean_ts(obj, target):
-    X = pd.concat([obj.test_X, obj.test_y], axis=1)
-    X2 = pd.concat([obj.test_X, obj.test_yhat], axis=1)
-    X.columns = list(obj.test_X.columns) + list(obj.test_y.columns)
-    X2.columns = X.columns
-
-    X.mean().plot(label='actual;')
-    X2.mean().plot(label='predicted')
-    pyplot.title(f'mean {target} actual vs predicted')
-    pyplot.legend(loc='best')
-    pyplot.show()
+def plot_mean_ts(data, idx=None, **kwargs):
+    if idx is None:
+        plot_data = data.mean()
+    elif isinstance(idx, int):
+        plot_data = data.sample(idx).T
+    elif isinstance(idx, str):
+        plot_data = data.loc[idx, :]
+    plot_data.plot(**kwargs)
+    return

@@ -68,7 +68,6 @@ class SimpleGBM:
         yhat = self.model.predict(X)
         yhat = pd.DataFrame(yhat)
         yhat.index = X.index
-        yhat.columns = [f'forecast_{i}' for i in range(self.n_forecast)]
         return np.maximum(yhat, 0).round()
 
 class FBProph:

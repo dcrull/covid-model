@@ -83,16 +83,23 @@ class CVPredict:
         X = self.feature_pipe.transform(X)
         return fitted_model.predict(X)
 
-    def run_cvfold(self, data, model_id, kstep, idx):
-        X, y = self.split_data(data.iloc[:, idx:idx + kstep])
+    def run_cvfold(self, data, model_id, idx):
+        X, y = self.split_data(data.iloc[:, 0:idx])
         fold_X, fold_y = self.split_data(X)
         fitted_model = self.transform_fit(fold_X, fold_y, model_id)
-        return X, y, self.transform_predict(X, fitted_model)
+        yhat = self.transform_predict(X, fitted_model)
+        yhat.columns = y.columns
+        return X, y, yhat
 
     def expanding_window(self, k, data, model_id):
         ncols = data.shape[1]
         kstep = ncols // k
-        return {f'fold_{ct}': self.run_cvfold(data, model_id, kstep, idx) for ct, idx in enumerate(np.arange(ncols, step=kstep))}
+        return {f'fold_{ct}': self.run_cvfold(data, model_id, idx) for ct, idx in enumerate(np.arange(kstep, ncols + kstep, step=kstep))}
+
+    def plot_cv_ts(self, results):
+        dfs = list(results.values())
+        plot_mean_ts(dfs[-1][0])
+        _ = [plot_mean_ts(i[0],) for i in dfs]
 
     #TODO append X + y, X + yhat
     #TODO plots
