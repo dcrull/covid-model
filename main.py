@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 from functools import partial
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL
-from utils import mse, rmse, mdpe, mdape
-from plotting import plot_ts
+from utils import exp_error, perc_error, abs_perc_error
+from plotting import plot_ts, heatmap
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
 from transformers.transform_ts import TSRate, GF
@@ -67,13 +67,6 @@ class CVPredict:
         q, r = divmod(len(seq), k)
         return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
 
-    # def get_metrics(self, y, yhat, model_id, funcs):
-    #     return pd.DataFrame.from_dict(
-    #         {i[0]: self.loss_func(y, yhat, i[1]) for i in funcs},
-    #         orient="index",
-    #         columns=[f"{model_id}_test"],
-    #     )
-
     def data_prep(self, urlpath):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.transform(data)
@@ -112,12 +105,15 @@ class CVPredict:
             model_id, fold_id = k.split('__')
             plot_ts(v[2], idx=idx, c='indianred', lw=3.5, label=fold_id+' forecast')
 
-        title_suffix = 'median across obs
+        title_suffix = 'median across obs'
         if isinstance(idx, str): title_suffix = idx
         plt.title(f'actual vs {model_id} predicted {target} by cross-validation fold: {title_suffix}')
         plt.legend()
         plt.show()
         return
+
+    def fold_error(self, results, err_func):
+        return [err_func(v[1], v[2]).mean().mean() for v in results.values()]
 
 def testing():
     cv = CVPredict(n_forecast=3)

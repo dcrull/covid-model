@@ -1,30 +1,12 @@
 import numpy as np
+import pandas as pd
 
-def trim_leading(data, thresh):
-    idx = 0
-    for i in data:
-        if i > thresh:
-            break
-        else:
-            idx += 1
-    return data[idx:]
+def exp_error(y, yhat, p=2):
+    return pd.DataFrame((np.asarray(y) - np.asarray(yhat)) ** p, columns=y.columns, index=y.index)
 
-def mse(y, yhat):
-    y = np.asarray(y)
-    yhat = np.asarray(yhat)
-    return np.mean((y - yhat) ** 2)
 
-def rmse(y, yhat):
-    y = np.asarray(y)
-    yhat = np.asarray(yhat)
-    return np.sqrt(np.mean((np.asarray(y) - np.asarray(yhat)) ** 2))
+def perc_error(y, yhat):
+    return pd.DataFrame((np.asarray(y) - np.asarray(yhat)) * 100.0 / np.asarray(y), columns=y.columns, index=y.index)
 
-def mdpe(y, yhat):
-    y = np.asarray(y)
-    yhat = np.asarray(yhat)
-    return np.nanmedian((y - yhat) * 100.0 / y)
-
-def mdape(y, yhat):
-    y = np.asarray(y)
-    yhat = np.asarray(yhat)
-    return np.nanmedian(abs(y - yhat) * 100.0 / y)
+def abs_perc_error(y, yhat):
+    return abs(perc_error(y, yhat))
