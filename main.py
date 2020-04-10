@@ -6,7 +6,7 @@ from functools import partial
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL
 from utils import exp_error, perc_error, abs_perc_error
-from plotting import plot_ts, heatmap
+from plotting import plot_ts, heatmap, plot_forecast
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
 from transformers.transform_ts import TSRate, GF
@@ -20,8 +20,8 @@ PREP_STEPS = [
 ]
 
 FEAT_STEPS = [
-    ('first_diff', TSRate(get_dxdy=False, periods=3, order=1)),
-    # ('gf_s1.5', GF(sigma=0.5)),
+    ('first_diff', TSRate(get_dxdy=True, periods=14, order=1)),
+    # ('gf', GF(sigma=0.5)),
     ('dropna', DropNA())
 ]
 #TODO: other transformations (log, etc)
@@ -58,10 +58,6 @@ class CVPredict:
 
     def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
-
-    @staticmethod
-    def loss_func(y, yhat, func):
-        return func(y, yhat)
 
     @staticmethod
     def expandingsplit(seq, k):
@@ -106,7 +102,7 @@ class CVPredict:
             model_id, fold_id = k.split('__')
             plot_ts(v[2], idx=idx, c='indianred', lw=3.5, label=fold_id+' forecast')
 
-        title_suffix = 'median across obs'
+        title_suffix = 'mean across obs'
         if isinstance(idx, str): title_suffix = idx
         plt.title(f'actual and {model_id} predicted {target} by cross-validation fold: {title_suffix}')
         plt.legend()
@@ -121,7 +117,7 @@ class CVPredict:
 
         fig = plt.figure()
         plot_ts(pd.concat([X, y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
-        label_suffix = 'median across obs'
+        label_suffix = 'mean across obs'
         if isinstance(idx, str): label_suffix = idx
         plot_ts(yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
         plt.title(f'actual and predicted {target}; err: {err:.4f}')
@@ -144,3 +140,6 @@ def testing():
     in_sample, out_sample = cv.data_prep(cv.nyt_county_url)
     cvout = cv.expanding_window(5, in_sample, 'gbm')
     return cv, in_sample, out_sample, cvout
+
+# TODO: add maps
+# TODO: enrich

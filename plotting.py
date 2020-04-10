@@ -37,7 +37,7 @@ def heatmap(df, target, sort_col='2020-04-01', norm=colors.LogNorm(vmin=1), fore
 
 def plot_ts(data, idx=None, **kwargs):
     if idx is None:
-        plot_data = data.median()
+        plot_data = data.mean()
     elif isinstance(idx, int):
         plot_data = data.sample(idx, random_state=32).T
     elif isinstance(idx, str):
