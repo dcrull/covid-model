@@ -1,19 +1,11 @@
 from sklearn.base import BaseEstimator, TransformerMixin
 
-
 class CreateTS(BaseEstimator, TransformerMixin):
-    """
-    create ts
-    """
-    def __init__(self, geo_col, val_col):
-        self.geo_col = geo_col
-        self.val_col = val_col
+    def __init__(self, response_var):
+        self.response_var = response_var
 
-    def pivot_data(self, data):
-        return data.pivot(index=self.geo_col, columns='date', values=self.val_col).fillna(0)
-
-    def fit(self, X, y):
+    def fit(self, X):
         return self
 
-    def transform(self, X, y):
-        return self.pivot_data(X), self.pivot_data(y)
+    def transform(self, X):
+        return X.pivot(index='geoid', columns='date', values=self.response_var).fillna(0)

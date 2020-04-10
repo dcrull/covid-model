@@ -1,199 +1,145 @@
-from sklearn.pipeline import Pipeline
-from transformers.feat_eng import PivotData, MakeDiff
-from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
-from lib.cv19nyt import df_from_api, nyt_state_api, nyt_county_api
-from utils import plot_mean_ts, heatmap
+import datetime
 import pandas as pd
 import numpy as np
-from tqdm import tqdm
+import matplotlib.pyplot as plt
+from functools import partial
+from sklearn.pipeline import Pipeline
+from config import NYT_COUNTY_URL, NYT_STATE_URL
+from utils import exp_error, perc_error, abs_perc_error
+from plotting import plot_ts, heatmap, plot_forecast
+from transformers.nyt import PrepNYT
+from transformers.create_ts import CreateTS
+from transformers.transform_ts import TSRate, GF
+from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
+from transformers.clean import DropNA
 
-TARGET = 'cases'
-DATA_API = nyt_state_api
 
-# MODEL = Naive
-# MODEL_PARAMS = {'method':np.mean, 'kwargs':{'axis':1}}
-# MODEL_ID = 'naive_model'
+PREP_STEPS = [
+    ('prepnyt', PrepNYT()),
+    ('create_ts', CreateTS(response_var='cases')),
+]
 
-# MODEL = SimpleARIMA
-# MODEL_PARAMS = {'lag_order':7, 'degree_of_diff':0, 'ma_window':0}
-# MODEL_ID = 'simpleARIMA'
+FEAT_STEPS = [
+    ('first_diff', TSRate(get_dxdy=True, periods=14, order=1)),
+    # ('gf', GF(sigma=0.5)),
+    ('dropna', DropNA())
+]
+#TODO: other transformations (log, etc)
 
-MODEL = SimpleGBM
-MODEL_PARAMS = {'n_estimators':500, 'n_jobs':-1}
-MODEL_ID = 'XGB'
-
-# MODEL = FBProph
-# MODEL_PARAMS = {}
-# MODEL_ID = "prophet"
-
-STEPS = [('pivot_data', PivotData(target=TARGET)),
-         # ('make_diff', MakeDiff()),
-         ]
-
-def make_pipeline(steps=STEPS):
-    return Pipeline(steps)
+MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
+          'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
+          'gbm':SimpleGBM(n_estimators=1000, n_jobs=-1),
+          'prophet':FBProph()}
 
 class CVPredict:
-    def __init__(
-        self,
-        n_forecast,
-        data_api=DATA_API,
-        target=TARGET,
-        pipeline=make_pipeline(),
-        model=MODEL,
-        model_params = MODEL_PARAMS,
-        model_id=MODEL_ID,
-        kfolds=7
-    ):
+    def __init__(self,
+                 n_forecast,
+                 nyt_county_url=NYT_COUNTY_URL,
+                 nyt_state_url=NYT_STATE_URL,
+                 prep_steps=PREP_STEPS,
+                 feat_steps=FEAT_STEPS,
+                 models=MODELS,
+                 ):
+        self.nyt_county_url = nyt_county_url
+        self.nyt_state_url = nyt_state_url
+        self.prep_pipe = Pipeline(prep_steps)
+        self.feature_pipe = Pipeline(feat_steps)
+        self.models = models
+        self.__set_forecast__(n_forecast)
+
+    def __set_forecast__(self, n_forecast):
         self.n_forecast = n_forecast
-        self.target = target
-        self.data = df_from_api(data_api)
-        self.pipeline = pipeline
-        self.model = model(n_forecast=self.n_forecast, **model_params)
-        self.model_id = model_id
-        self.kfolds = kfolds
-        self.__create_ts(self.data)
-        self.__train_holdout_split()
+        for k,v in self.models.items():
+            v.n_forecast = n_forecast
+            self.models[k] = v
 
+    def load_nyt(self, url):
+        return pd.read_csv(url, parse_dates=['date'])
 
-    def __create_ts(self, data):
-        self.ts = self.pipeline.fit_transform(data)
-
-    def __train_holdout_split(self):
-        self.train_data = self.ts.iloc[:, :-self.n_forecast*2]
-        self.test_data = self.ts
-
-    def cv_splitter(self, k):
-        ncols = self.train_data.shape[1] - (self.n_forecast * 2)
-        step = ncols // k
-
-        for i in np.arange(step, ncols, step=step):
-            train_X = self.train_data.columns[:i]
-            train_y = self.train_data.columns[i:i+self.n_forecast]
-            valid_X = self.train_data.columns[:i+self.n_forecast]
-            valid_y = self.train_data.columns[i+self.n_forecast:i+2*self.n_forecast]
-            yield train_X, train_y, valid_X, valid_y
+    def split_data(self, data):
+        return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
 
     @staticmethod
-    def mse(y, yhat):
-        y = np.asarray(y)
-        yhat = np.asarray(yhat)
-        return np.mean((y - yhat) ** 2)
+    def expandingsplit(seq, k):
+        q, r = divmod(len(seq), k)
+        return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
 
-    @staticmethod
-    def rmse(y, yhat):
-        y = np.asarray(y)
-        yhat = np.asarray(yhat)
-        return np.sqrt(np.mean((np.asarray(y) - np.asarray(yhat)) ** 2))
+    def data_prep(self, urlpath):
+        data = self.load_nyt(urlpath)
+        data = self.prep_pipe.transform(data)
+        in_sample, out_sample = self.split_data(data)
+        return in_sample, out_sample
 
-    @staticmethod
-    def mdpe(y, yhat):
-        y = np.asarray(y)
-        yhat = np.asarray(yhat)
-        return np.nanmedian((y - yhat) * 100.0 / y)
+    #TODO: streamline as sklearn pipeline
+    def transform_fit(self, X, y, model_id):
+        X = self.feature_pipe.transform(X)
+        return self.models[model_id].fit(X, y)
 
-    @staticmethod
-    def mdape(y, yhat):
-        y = np.asarray(y)
-        yhat = np.asarray(yhat)
-        return np.nanmedian(abs(y - yhat) * 100.0 / y)
+    def transform_predict(self, X, fitted_model):
+        X = self.feature_pipe.transform(X)
+        return fitted_model.predict(X)
 
-    @staticmethod
-    def loss_func(y, yhat, func):
-        return func(y, yhat)
+    def run_inference(self, data, model_id, cols):
+        X, y = self.split_data(data.loc[:, cols])
+        fold_X, fold_y = self.split_data(X)
+        fitted_model = self.transform_fit(fold_X, fold_y, model_id)
+        yhat = self.transform_predict(X, fitted_model)
+        yhat.columns = y.columns
+        return X, y, yhat
 
-    def get_metrics(self, y, yhat, funcs):
-        return pd.DataFrame.from_dict(
-            {i[0]: self.loss_func(y, yhat, i[1]) for i in funcs},
-            orient="index",
-            columns=[f"{self.model_id}_test"],
-        )
+    def expanding_window(self, k, data, model_id):
+        col_chunks = self.expandingsplit(data.columns, k)
+        return {f'{model_id}__fold_{ct}': self.run_inference(data, model_id, cols) for ct, cols in enumerate(col_chunks)}
 
-    def expanding_window_cv(self):
-        folds = self.cv_splitter(k=self.kfolds)
-        train_kpis = []
-        valid_kpis = []
-        i = 0
-        print("conducting expanding window cross-validation...")
-        for train_X, train_y, valid_X, valid_y in tqdm(folds):
-            train_X = self.train_data.loc[:, train_X]
-            train_y = self.train_data.loc[:, train_y]
-            valid_X = self.train_data.loc[:, valid_X]
-            valid_y = self.train_data.loc[:, valid_y]
+    def final_test(self, urlpath, model_id):
+        data = self.load_nyt(urlpath)
+        data = self.prep_pipe.transform(data)
+        return self.run_inference(data, model_id, data.columns)
 
-            self.model.fit(train_X, train_y)
-            train_yhat = self.model.predict(train_X)
-            valid_yhat = self.model.predict(valid_X)
+    def plot_folds_ts(self, in_sample, results, idx, target):
+        plot_ts(in_sample, idx=idx, c='steelblue',lw=2, label='actual')
+        for k, v in results.items():
+            model_id, fold_id = k.split('__')
+            plot_ts(v[2], idx=idx, c='indianred', lw=3.5, label=fold_id+' forecast')
 
-            train_foldkpis = self.get_metrics(
-                train_y,
-                train_yhat,
-                (
-                    ("mse", self.mse),
-                    ("rmse", self.rmse),
-                    ("mdpe", self.mdpe),
-                    ("mdape", self.mdape),
-                ),
-            )
-            valid_foldkpis = self.get_metrics(
-                valid_y,
-                valid_yhat,
-                (
-                    ("mse", self.mse),
-                    ("rmse", self.rmse),
-                    ("mdpe", self.mdpe),
-                    ("mdape", self.mdape),
-                ),
-            )
-            train_foldkpis.columns = [f"{col}_{i}" for col in train_foldkpis.columns]
-            valid_foldkpis.columns = [f"{col}_{i}" for col in valid_foldkpis.columns]
-            train_kpis.append(train_foldkpis)
-            valid_kpis.append(valid_foldkpis)
-            i += 1
+        title_suffix = 'mean across obs'
+        if isinstance(idx, str): title_suffix = idx
+        plt.title(f'actual and {model_id} predicted {target} by cross-validation fold: {title_suffix}')
+        plt.legend()
+        plt.show()
+        return
 
-        self.train_kpis = pd.concat(train_kpis, axis=1)
-        self.valid_kpis = pd.concat(valid_kpis, axis=1)
-        self.train_kpis["fold_mu"] = self.train_kpis.mean(axis=1)
-        self.valid_kpis["fold_mu"] = self.valid_kpis.mean(axis=1)
+    def fold_error(self, results, err_func):
+        return [err_func(v[1], v[2]).mean().mean() for v in results.values()]
 
-    def final_predict(self):
-        print('predicting on test data...')
-        self.train_X = self.train_data.iloc[:, :-self.n_forecast]
-        self.train_y = self.train_data.iloc[:, -self.n_forecast:]
-        self.test_X = self.test_data.iloc[:, :-self.n_forecast]
-        self.test_y = self.test_data.iloc[:, -self.n_forecast:]
+    def final_plots_and_error(self, X, y, yhat, idx, target, err_func):
+        err = err_func(y, yhat).mean().mean()
 
-        self.model.fit(self.train_X, self.train_y)
-        self.test_yhat = self.model.predict(self.test_X)
+        fig = plt.figure()
+        plot_ts(pd.concat([X, y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
+        label_suffix = 'mean across obs'
+        if isinstance(idx, str): label_suffix = idx
+        plot_ts(yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
+        plt.title(f'actual and predicted {target}; err: {err:.4f}')
 
-        self.test_kpis = self.get_metrics(self.test_y, self.test_yhat, (("mse", self.mse),
-                                                                        ("rmse", self.rmse),
-                                                                        ("mdpe", self.mdpe),
-                                                                        ("mdape", self.mdape)))
+        fig = plt.figure()
+        heatmap(df=pd.concat([X, yhat], axis=1), target=target, sort_col=X.columns[-1], forecast_line=self.n_forecast)
+        return
 
-    def save_obj(self, opath=f'{MODEL_ID}_artifact.dill'):
-        # save the model, pipeline and outputs (but not data)
-        obj = {'pipeline':self.pipeline,
-               'model_id':self.model_id,
-               'model':self.model,
-               'y':self.test_y,
-               'yhat':self.test_yhat,
-               'kpis':self.test_kpis}
-        with open(opath, 'wb') as f:
-            dill.dump(obj, f)
-        print(f'key model and data attributes and output from test saved at {opath}')
+    def out_of_sample_predict(self, urlpath, model_id):
+        data = self.load_nyt(urlpath)
+        data = self.prep_pipe.transform(data)
+        X, y = self.split_data(data)
+        fitted_model = self.transform_fit(X, y, model_id)
+        yhat = self.transform_predict(data, fitted_model)
+        yhat.columns = pd.date_range(start=data.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
+        return data, yhat
 
 def testing():
-    cv = CVPredict(n_forecast=1)
-    cv.train_X = cv.train_data.iloc[:, :-cv.n_forecast]
-    cv.train_y = cv.train_data.iloc[:, -cv.n_forecast:]
-    cv.test_X = cv.test_data.iloc[:, :-cv.n_forecast]
-    cv.test_y = cv.test_data.iloc[:, -cv.n_forecast:]
-    return cv
+    cv = CVPredict(n_forecast=3)
+    in_sample, out_sample = cv.data_prep(cv.nyt_county_url)
+    cvout = cv.expanding_window(5, in_sample, 'gbm')
+    return cv, in_sample, out_sample, cvout
 
-
-if __name__=='__main__':
-    obj = TSPredict()
-    obj.final_predict()
-    obj.save_obj()
-
+# TODO: add maps
+# TODO: enrich
