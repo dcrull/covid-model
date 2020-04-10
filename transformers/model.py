@@ -71,13 +71,24 @@ class SimpleGBM:
         return np.maximum(yhat, 0).round()
 
 class FBProph:
-    def __init__(self, n_forecast=1, model=Prophet):
-        self.model = model
+    def __init__(self, n_forecast=1, thresh=-1, model=Prophet):
         self.n_forecast = n_forecast
+        self.variable_thresh = thresh
+        self.model = model
+
+    def trim_leading(self, rowdata):
+        idx = 0
+        for i in rowdata['y']:
+            if i > self.variable_thresh:
+                break
+            else:
+                idx += 1
+        return rowdata[idx:]
 
     def get_forecast(self, rowdata):
         rowdata = rowdata.reset_index()
         rowdata.columns = ["ds", "y"]
+        rowdata = self.trim_leading(rowdata)
         fit_model = self.model().fit(rowdata)
         future = fit_model.make_future_dataframe(periods=self.n_forecast)
         forecast = fit_model.predict(future)
@@ -94,5 +105,4 @@ class FBProph:
         p.join()
         yhat = pd.DataFrame(yhat)
         yhat.index = X.index
-        yhat.columns = [f'forecast_{i}' for i in range(self.n_forecast)]
         return np.maximum(yhat, 0).round()
