@@ -17,14 +17,18 @@ from transformers.clean import DropNA
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('create_ts', CreateTS(response_var='cases')),
+    ('first_diff', TSRate(get_dxdy=False, periods=1, order=1))
 ]
 
 FEAT_STEPS = [
-    ('first_diff', TSRate(get_dxdy=True, periods=14, order=1)),
+    ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
     # ('gf', GF(sigma=0.5)),
     ('dropna', DropNA())
 ]
 #TODO: other transformations (log, etc)
+# transform : boxcox (sqrt, log)
+#- step difference
+#- smoothing/filtering
 
 MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
           'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
@@ -34,6 +38,7 @@ MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
 class CVPredict:
     def __init__(self,
                  n_forecast,
+                 variable_thresh=-1,
                  nyt_county_url=NYT_COUNTY_URL,
                  nyt_state_url=NYT_STATE_URL,
                  prep_steps=PREP_STEPS,
@@ -46,12 +51,20 @@ class CVPredict:
         self.feature_pipe = Pipeline(feat_steps)
         self.models = models
         self.__set_forecast__(n_forecast)
+        self.__set_thresh__(variable_thresh)
 
     def __set_forecast__(self, n_forecast):
         self.n_forecast = n_forecast
         for k,v in self.models.items():
             v.n_forecast = n_forecast
             self.models[k] = v
+
+    def __set_thresh__(self, thresh):
+        self.variable_thresh = thresh
+        for k,v in self.models.items():
+            if hasattr(v, 'thresh'):
+                v.variable_thresh = thresh
+                self.models[k] = v
 
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
