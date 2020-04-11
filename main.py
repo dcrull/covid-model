@@ -17,6 +17,7 @@ from transformers.clean import DropNA
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('create_ts', CreateTS(response_var='cases')),
+    ('first_diff', TSRate(get_dxdy=False, periods=1, order=1))
 ]
 
 FEAT_STEPS = [
@@ -25,6 +26,9 @@ FEAT_STEPS = [
     ('dropna', DropNA())
 ]
 #TODO: other transformations (log, etc)
+# transform : boxcox (sqrt, log)
+#- step difference
+#- smoothing/filtering
 
 MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
           'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
