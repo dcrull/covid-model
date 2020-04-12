@@ -7,3 +7,6 @@ class DropNA(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         return X.dropna(how='all', axis=1)
+
+    def inverse_transform(self, X):
+        return X

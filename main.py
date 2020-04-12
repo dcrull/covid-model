@@ -9,31 +9,29 @@ from utils import exp_error, perc_error, abs_perc_error
 from plotting import plot_ts, heatmap, plot_forecast
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
-from transformers.transform_ts import TSRate, GF
+from transformers.differencing import Diff
+from transformers.power_transformer import PowerT
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from transformers.clean import DropNA
+
 
 
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('create_ts', CreateTS(response_var='cases')),
-    ('first_diff', TSRate(get_dxdy=False, periods=1, order=1))
 ]
 
-FEAT_STEPS = [
-    ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
-    # ('gf', GF(sigma=0.5)),
-    ('dropna', DropNA())
+FEATURE_STEPS = [
+    ('yeo_johnson', PowerT(method='yeo-johnson')),
+    ('first_diff', Diff()),
+    ('dropna', DropNA()),
 ]
-#TODO: other transformations (log, etc)
-# transform : boxcox (sqrt, log)
-#- step difference
-#- smoothing/filtering
 
 MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
           'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
           'gbm':SimpleGBM(n_estimators=1000, n_jobs=-1),
-          'prophet':FBProph()}
+          'prophet': FBProph(),
+          }
 
 class CVPredict:
     def __init__(self,
@@ -42,7 +40,7 @@ class CVPredict:
                  nyt_county_url=NYT_COUNTY_URL,
                  nyt_state_url=NYT_STATE_URL,
                  prep_steps=PREP_STEPS,
-                 feat_steps=FEAT_STEPS,
+                 feat_steps=FEATURE_STEPS,
                  models=MODELS,
                  ):
         self.nyt_county_url = nyt_county_url
@@ -66,16 +64,16 @@ class CVPredict:
                 v.variable_thresh = thresh
                 self.models[k] = v
 
+    @staticmethod
+    def expandingsplit(seq, k):
+        q, r = divmod(len(seq), k)
+        return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
+
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
 
     def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
-
-    @staticmethod
-    def expandingsplit(seq, k):
-        q, r = divmod(len(seq), k)
-        return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
 
     def data_prep(self, urlpath):
         data = self.load_nyt(urlpath)
@@ -83,20 +81,21 @@ class CVPredict:
         in_sample, out_sample = self.split_data(data)
         return in_sample, out_sample
 
-    #TODO: streamline as sklearn pipeline
-    def transform_fit(self, X, y, model_id):
-        X = self.feature_pipe.transform(X)
-        return self.models[model_id].fit(X, y)
+    def build_pipes(self, subpipes, model_id):
+        return Pipeline(subpipes + [(model_id, self.models[model_id])])
 
-    def transform_predict(self, X, fitted_model):
-        X = self.feature_pipe.transform(X)
-        return fitted_model.predict(X)
+    # def transform_fit(self, X, y, model_id):
+    #     X = self.feature_pipe.transform(X)
+    #     return self.models[model_id].fit(X, y)
+    #
+    # def transform_predict(self, X, fitted_model):
+    #     X = self.feature_pipe.transform(X)
+    #     return fitted_model.predict(X)
 
     def run_inference(self, data, model_id, cols):
         X, y = self.split_data(data.loc[:, cols])
-        fold_X, fold_y = self.split_data(X)
-        fitted_model = self.transform_fit(fold_X, fold_y, model_id)
-        yhat = self.transform_predict(X, fitted_model)
+        self.final_pipe = self.build_pipes(subpipes=[('data_pipe', self.feature_pipe)], model_id=model_id)
+        yhat = self.final_pipe.fit(X).predict(X)
         yhat.columns = y.columns
         return X, y, yhat
 
