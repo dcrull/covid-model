@@ -57,7 +57,7 @@ class SimpleGBM:
         return X
 
     def fit(self, X, y=None):
-
+        X, y = X.iloc[:, :-self.n_forecast], X.iloc[:, -self.n_forecast:]
         X = self.col_map(X)
         self.cols = X.columns
         self.model.fit(X, y.values)
@@ -72,24 +72,13 @@ class SimpleGBM:
         return yhat.round()
 
 class FBProph:
-    def __init__(self, n_forecast=1, thresh=-1, model=Prophet):
+    def __init__(self, n_forecast=1, model=Prophet):
         self.n_forecast = n_forecast
-        self.variable_thresh = thresh
         self.model = model
-
-    def trim_leading(self, rowdata):
-        idx = 0
-        for i in rowdata['y']:
-            if i > self.variable_thresh:
-                break
-            else:
-                idx += 1
-        return rowdata[idx:]
 
     def get_forecast(self, rowdata):
         rowdata = rowdata.reset_index()
         rowdata.columns = ["ds", "y"]
-        rowdata = self.trim_leading(rowdata)
         fit_model = self.model().fit(rowdata)
         future = fit_model.make_future_dataframe(periods=self.n_forecast)
         forecast = fit_model.predict(future)
