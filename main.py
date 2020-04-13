@@ -1,3 +1,4 @@
+import dill
 import datetime
 import pandas as pd
 import numpy as np
@@ -14,17 +15,15 @@ from transformers.power_transformer import PowerT, LogT
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from transformers.clean import DropNA
 
-
-
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('create_ts', CreateTS(response_var='cases')),
 ]
 
 FEATURE_STEPS = [
-    ('log1p', LogT()),
+    ('logtrans', LogT(func='log1p')),
     ('first_diff', Diff()),
-    ('dropna', DropNA()),
+    # ('dropna', DropNA()),
 ]
 
 MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
@@ -45,7 +44,7 @@ class CVPredict:
         self.nyt_county_url = nyt_county_url
         self.nyt_state_url = nyt_state_url
         self.prep_pipe = Pipeline(prep_steps)
-        self.feature_pipe = Pipeline(feat_steps)
+        self.feature_steps = feat_steps
         self.models = models
         self.__set_forecast__(n_forecast)
 
@@ -72,25 +71,28 @@ class CVPredict:
         in_sample, out_sample = self.split_data(data)
         return in_sample, out_sample
 
-    def build_pipes(self, subpipes, model_id):
-        return Pipeline(subpipes + [(model_id, self.models[model_id])])
+    def build_final_pipe(self, model_id):
+        pipe = Pipeline(self.feature_steps)
+        pipe.steps.append((model_id, self.models[model_id]))
+        return pipe
 
-    def run_inference(self, data, model_id, cols):
+    def run_inference(self, data, cols, final_pipe):
         X, y = self.split_data(data.loc[:, cols])
-        self.final_pipe = self.build_pipes(subpipes=[('data_pipe', self.feature_pipe)], model_id=model_id)
-        yhat = self.final_pipe.fit(X).predict(X)
+        yhat = final_pipe.fit(X).predict(X)
         yhat.columns = y.columns
-        yhat = self.feature_pipe.inverse_transform(yhat)
+        yhat = final_pipe[:-1].inverse_transform(yhat)
         return X, y, yhat
 
     def expanding_window(self, k, data, model_id):
         col_chunks = self.expandingsplit(data.columns, k)
-        return {f'{model_id}__fold_{ct}': self.run_inference(data, model_id, cols) for ct, cols in enumerate(col_chunks)}
+        final_pipe = self.build_final_pipe(model_id)
+        return {f'{model_id}__fold_{ct}': self.run_inference(data, cols, final_pipe) for ct, cols in enumerate(col_chunks)}
 
     def final_test(self, urlpath, model_id):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.transform(data)
-        return self.run_inference(data, model_id, data.columns)
+        self.final_pipe = self.build_final_pipe(model_id)
+        self.final_X, self.final_y, self.final_yhat = self.run_inference(data, data.columns, self.final_pipe)
 
     def plot_folds_ts(self, in_sample, results, idx, target):
         plot_ts(in_sample, idx=idx, c='steelblue',lw=2, label='actual')
@@ -108,18 +110,18 @@ class CVPredict:
     def fold_error(self, results, err_func):
         return [err_func(v[1], v[2]).mean().mean() for v in results.values()]
 
-    def final_plots_and_error(self, X, y, yhat, idx, target, err_func):
-        err = err_func(y, yhat).mean().mean()
+    def final_plots_and_error(self, idx, target, err_func):
+        self.final_err = err_func(self.final_y, self.final_yhat).mean().mean()
 
         fig = plt.figure()
-        plot_ts(pd.concat([X, y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
+        plot_ts(pd.concat([self.final_X, self.final_y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
         label_suffix = 'mean across obs'
         if isinstance(idx, str): label_suffix = idx
-        plot_ts(yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
-        plt.title(f'actual and predicted {target}; err: {err:.4f}')
+        plot_ts(self.final_yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
+        plt.title(f'actual and predicted {target}; err: {self.final_err:.4f}')
 
         fig = plt.figure()
-        heatmap(df=pd.concat([X, yhat], axis=1), target=target, sort_col=X.columns[-1], forecast_line=self.n_forecast)
+        heatmap(df=pd.concat([self.final_X, self.final_yhat], axis=1), target=target, sort_col=self.final_X.columns[-1], forecast_line=self.n_forecast)
         return
 
     def out_of_sample_predict(self, urlpath, model_id):
@@ -131,11 +133,10 @@ class CVPredict:
         yhat.columns = pd.date_range(start=data.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
         return data, yhat
 
-def testing():
-    cv = CVPredict(n_forecast=3)
-    in_sample, out_sample = cv.data_prep(cv.nyt_county_url)
-    cvout = cv.expanding_window(5, in_sample, 'gbm')
-    return cv, in_sample, out_sample, cvout
+    def save_obj(self, opath):
+        with open(opath, 'wb') as f:
+            dill.dump(self, f)
+
 
 # TODO: add maps
 # TODO: enrich
