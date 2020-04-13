@@ -56,7 +56,8 @@ class SimpleGBM:
         X.columns = [f"t_{i}" for i in reversed(range(len(X.columns)))]
         return X
 
-    def fit(self, X, y):
+    def fit(self, X, y=None):
+
         X = self.col_map(X)
         self.cols = X.columns
         self.model.fit(X, y.values)
@@ -68,7 +69,7 @@ class SimpleGBM:
         yhat = self.model.predict(X)
         yhat = pd.DataFrame(yhat)
         yhat.index = X.index
-        return np.maximum(yhat, 0).round()
+        return yhat.round()
 
 class FBProph:
     def __init__(self, n_forecast=1, thresh=-1, model=Prophet):
@@ -105,4 +106,4 @@ class FBProph:
         p.join()
         yhat = pd.DataFrame(yhat)
         yhat.index = X.index
-        return np.maximum(yhat, 0).round()
+        return yhat.round()

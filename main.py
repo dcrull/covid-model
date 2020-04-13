@@ -10,7 +10,7 @@ from plotting import plot_ts, heatmap, plot_forecast
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
 from transformers.differencing import Diff
-from transformers.power_transformer import PowerT
+from transformers.power_transformer import PowerT, LogT
 from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
 from transformers.clean import DropNA
 
@@ -22,7 +22,7 @@ PREP_STEPS = [
 ]
 
 FEATURE_STEPS = [
-    ('yeo_johnson', PowerT(method='yeo-johnson')),
+    ('log1p', LogT()),
     ('first_diff', Diff()),
     ('dropna', DropNA()),
 ]
@@ -84,19 +84,12 @@ class CVPredict:
     def build_pipes(self, subpipes, model_id):
         return Pipeline(subpipes + [(model_id, self.models[model_id])])
 
-    # def transform_fit(self, X, y, model_id):
-    #     X = self.feature_pipe.transform(X)
-    #     return self.models[model_id].fit(X, y)
-    #
-    # def transform_predict(self, X, fitted_model):
-    #     X = self.feature_pipe.transform(X)
-    #     return fitted_model.predict(X)
-
     def run_inference(self, data, model_id, cols):
         X, y = self.split_data(data.loc[:, cols])
         self.final_pipe = self.build_pipes(subpipes=[('data_pipe', self.feature_pipe)], model_id=model_id)
         yhat = self.final_pipe.fit(X).predict(X)
         yhat.columns = y.columns
+        yhat = self.feature_pipe.inverse_transform(yhat)
         return X, y, yhat
 
     def expanding_window(self, k, data, model_id):
