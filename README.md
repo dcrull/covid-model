@@ -35,6 +35,7 @@
 
 ### tasks
 1. build this all for State level first
-2.  XGB, Prophet, bayesian inf, LSTM
+2. Prophet (bayesian)
 3. enrich data
 4. ensemble approach w/ advanced features (SA, etc)
+5. func approx w/ DL
