@@ -1,3 +1,4 @@
+import dill
 import datetime
 import pandas as pd
 import numpy as np
@@ -9,49 +10,43 @@ from utils import exp_error, perc_error, abs_perc_error
 from plotting import plot_ts, heatmap, plot_forecast
 from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
-from transformers.transform_ts import TSRate, GF
-from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
+from transformers.differencing import Diff
+from transformers.power_transformer import PowerT, LogT
+from transformers.model import Naive, SimpleGBM, FBProph
 from transformers.clean import DropNA
-
 
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('create_ts', CreateTS(response_var='cases')),
-    ('first_diff', TSRate(get_dxdy=False, periods=1, order=1))
+    ('first_diff', Diff())
 ]
 
-FEAT_STEPS = [
-    ('first_diff', TSRate(get_dxdy=False, periods=7, order=1)),
-    # ('gf', GF(sigma=0.5)),
-    ('dropna', DropNA())
+FEATURE_STEPS = [
+    ('logtrans', LogT(func='log1p')),
+    ('first_diff', Diff()),
+    ('dropna', DropNA()),
 ]
-#TODO: other transformations (log, etc)
-# transform : boxcox (sqrt, log)
-#- step difference
-#- smoothing/filtering
 
 MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
-          'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
           'gbm':SimpleGBM(n_estimators=1000, n_jobs=-1),
-          'prophet':FBProph()}
+          'prophet': FBProph(),
+          }
 
 class CVPredict:
     def __init__(self,
                  n_forecast,
-                 variable_thresh=-1,
                  nyt_county_url=NYT_COUNTY_URL,
                  nyt_state_url=NYT_STATE_URL,
                  prep_steps=PREP_STEPS,
-                 feat_steps=FEAT_STEPS,
+                 feat_steps=FEATURE_STEPS,
                  models=MODELS,
                  ):
         self.nyt_county_url = nyt_county_url
         self.nyt_state_url = nyt_state_url
         self.prep_pipe = Pipeline(prep_steps)
-        self.feature_pipe = Pipeline(feat_steps)
+        self.feature_steps = feat_steps
         self.models = models
         self.__set_forecast__(n_forecast)
-        self.__set_thresh__(variable_thresh)
 
     def __set_forecast__(self, n_forecast):
         self.n_forecast = n_forecast
@@ -59,12 +54,10 @@ class CVPredict:
             v.n_forecast = n_forecast
             self.models[k] = v
 
-    def __set_thresh__(self, thresh):
-        self.variable_thresh = thresh
-        for k,v in self.models.items():
-            if hasattr(v, 'thresh'):
-                v.variable_thresh = thresh
-                self.models[k] = v
+    @staticmethod
+    def expandingsplit(seq, k):
+        q, r = divmod(len(seq), k)
+        return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
 
     def load_nyt(self, url):
         return pd.read_csv(url, parse_dates=['date'])
@@ -72,42 +65,33 @@ class CVPredict:
     def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
 
-    @staticmethod
-    def expandingsplit(seq, k):
-        q, r = divmod(len(seq), k)
-        return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
-
     def data_prep(self, urlpath):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.transform(data)
         in_sample, out_sample = self.split_data(data)
         return in_sample, out_sample
 
-    #TODO: streamline as sklearn pipeline
-    def transform_fit(self, X, y, model_id):
-        X = self.feature_pipe.transform(X)
-        return self.models[model_id].fit(X, y)
+    def build_final_pipe(self, model_id):
+        pipe = Pipeline(self.feature_steps + [(model_id, self.models[model_id])])
+        return pipe
 
-    def transform_predict(self, X, fitted_model):
-        X = self.feature_pipe.transform(X)
-        return fitted_model.predict(X)
-
-    def run_inference(self, data, model_id, cols):
+    def run_inference(self, data, final_pipe, cols):
         X, y = self.split_data(data.loc[:, cols])
-        fold_X, fold_y = self.split_data(X)
-        fitted_model = self.transform_fit(fold_X, fold_y, model_id)
-        yhat = self.transform_predict(X, fitted_model)
+        yhat = final_pipe.fit(X).predict(X)
         yhat.columns = y.columns
+        yhat = final_pipe[:-1].inverse_transform(yhat)
         return X, y, yhat
 
     def expanding_window(self, k, data, model_id):
         col_chunks = self.expandingsplit(data.columns, k)
-        return {f'{model_id}__fold_{ct}': self.run_inference(data, model_id, cols) for ct, cols in enumerate(col_chunks)}
+        final_pipe = self.build_final_pipe(model_id)
+        return {f'{model_id}__fold_{ct}': self.run_inference(data, final_pipe, cols) for ct, cols in enumerate(col_chunks)}
 
     def final_test(self, urlpath, model_id):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.transform(data)
-        return self.run_inference(data, model_id, data.columns)
+        self.final_pipe = self.build_final_pipe(model_id)
+        self.final_X, self.final_y, self.final_yhat = self.run_inference(data, self.final_pipe, data.columns)
 
     def plot_folds_ts(self, in_sample, results, idx, target):
         plot_ts(in_sample, idx=idx, c='steelblue',lw=2, label='actual')
@@ -125,34 +109,33 @@ class CVPredict:
     def fold_error(self, results, err_func):
         return [err_func(v[1], v[2]).mean().mean() for v in results.values()]
 
-    def final_plots_and_error(self, X, y, yhat, idx, target, err_func):
-        err = err_func(y, yhat).mean().mean()
+    def final_plots_and_error(self, idx, target, err_func):
+        self.final_err = err_func(self.final_y, self.final_yhat).mean().mean()
 
         fig = plt.figure()
-        plot_ts(pd.concat([X, y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
+        plot_ts(pd.concat([self.final_X, self.final_y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
         label_suffix = 'mean across obs'
         if isinstance(idx, str): label_suffix = idx
-        plot_ts(yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
-        plt.title(f'actual and predicted {target}; err: {err:.4f}')
+        plot_ts(self.final_yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
+        plt.title(f'actual and predicted {target}; err: {self.final_err:.4f}')
 
         fig = plt.figure()
-        heatmap(df=pd.concat([X, yhat], axis=1), target=target, sort_col=X.columns[-1], forecast_line=self.n_forecast)
+        heatmap(df=pd.concat([self.final_X, self.final_yhat], axis=1), target=target, sort_col=self.final_X.columns[-1], forecast_line=self.n_forecast)
         return
 
-    def out_of_sample_predict(self, urlpath, model_id):
+    def get_forecast(self, urlpath, model_id):
         data = self.load_nyt(urlpath)
-        data = self.prep_pipe.transform(data)
-        X, y = self.split_data(data)
-        fitted_model = self.transform_fit(X, y, model_id)
-        yhat = self.transform_predict(data, fitted_model)
-        yhat.columns = pd.date_range(start=data.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
-        return data, yhat
+        X = self.prep_pipe.transform(data)
+        pipe = self.build_final_pipe(model_id)
+        yhat = pipe.fit(X).predict(X)
+        yhat = pipe[:-1].inverse_transform(yhat)
+        yhat.columns = pd.date_range(start=X.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
+        return X, yhat
 
-def testing():
-    cv = CVPredict(n_forecast=3)
-    in_sample, out_sample = cv.data_prep(cv.nyt_county_url)
-    cvout = cv.expanding_window(5, in_sample, 'gbm')
-    return cv, in_sample, out_sample, cvout
+    def save_obj(self, opath):
+        with open(opath, 'wb') as f:
+            dill.dump(self, f)
+
 
 # TODO: add maps
 # TODO: enrich

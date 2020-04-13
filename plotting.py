@@ -1,24 +1,7 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.cluster import KMeans
 from matplotlib import pyplot,colors
 import pandas as pd
-
-# def get_clusters(data, model, **kwargs):
-#     return model(**kwargs).fit(data)
-#
-# def pandas_plot(data, sample_size=None, trim_thresh=None, **kwargs):
-#     if sample_size is not None: data = data.sample(sample_size)
-#     if trim_thresh is not None:
-#         data = data.values
-#         _ = [plt.plot(data[i, data[i, :] > trim_thresh], **kwargs) for i in range(len(data))]
-#         title = f'ct per day starting when count above {trim_thresh}'
-#     else:
-#         data.T.plot(**kwargs)
-#         title = 'ct per day'
-#     plt.title(title)
-#     plt.show()
-#     return
 
 def trim_leading(data, thresh):
     idx = 0
@@ -38,16 +21,19 @@ def heatmap(df, target, sort_col='2020-04-01', norm=colors.LogNorm(vmin=1), fore
 def plot_ts(data, idx=None, **kwargs):
     if idx is None:
         plot_data = data.mean()
+        plt.scatter(x=plot_data.index, y=plot_data, **kwargs)
     elif isinstance(idx, int):
         plot_data = data.sample(idx, random_state=32).T
+        plot_data.plot(**kwargs)
     elif isinstance(idx, str):
         plot_data = data.loc[idx, :]
-    plot_data.plot(**kwargs)
+        plt.scatter(x=plot_data.index, y=plot_data, **kwargs)
     return
 
-def plot_forecast(X, yhat, idx=None, **kwargs):
+def plot_forecast(X, yhat, idx=None):
     plot_ts(X, idx=idx, c='steelblue', lw=2, label='actual')
     plot_ts(yhat, idx=idx, c='indianred', ls='--', lw=2, label='forecast')
+    plt.legend()
     plt.show()
 
 def boxplot_error(errdata):
