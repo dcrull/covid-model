@@ -12,22 +12,22 @@ from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
 from transformers.differencing import Diff
 from transformers.power_transformer import PowerT, LogT
-from transformers.model import Naive, SimpleARIMA, SimpleGBM, FBProph
+from transformers.model import Naive, SimpleGBM, FBProph
 from transformers.clean import DropNA
 
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('create_ts', CreateTS(response_var='cases')),
+    ('first_diff', Diff())
 ]
 
 FEATURE_STEPS = [
     ('logtrans', LogT(func='log1p')),
     ('first_diff', Diff()),
-    # ('dropna', DropNA()),
+    ('dropna', DropNA()),
 ]
 
 MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
-          'arima':SimpleARIMA(lag_order=7, degree_of_diff=0, ma_window=0),
           'gbm':SimpleGBM(n_estimators=1000, n_jobs=-1),
           'prophet': FBProph(),
           }
@@ -72,11 +72,10 @@ class CVPredict:
         return in_sample, out_sample
 
     def build_final_pipe(self, model_id):
-        pipe = Pipeline(self.feature_steps)
-        pipe.steps.append((model_id, self.models[model_id]))
+        pipe = Pipeline(self.feature_steps + [(model_id, self.models[model_id])])
         return pipe
 
-    def run_inference(self, data, cols, final_pipe):
+    def run_inference(self, data, final_pipe, cols):
         X, y = self.split_data(data.loc[:, cols])
         yhat = final_pipe.fit(X).predict(X)
         yhat.columns = y.columns
@@ -86,13 +85,13 @@ class CVPredict:
     def expanding_window(self, k, data, model_id):
         col_chunks = self.expandingsplit(data.columns, k)
         final_pipe = self.build_final_pipe(model_id)
-        return {f'{model_id}__fold_{ct}': self.run_inference(data, cols, final_pipe) for ct, cols in enumerate(col_chunks)}
+        return {f'{model_id}__fold_{ct}': self.run_inference(data, final_pipe, cols) for ct, cols in enumerate(col_chunks)}
 
     def final_test(self, urlpath, model_id):
         data = self.load_nyt(urlpath)
         data = self.prep_pipe.transform(data)
         self.final_pipe = self.build_final_pipe(model_id)
-        self.final_X, self.final_y, self.final_yhat = self.run_inference(data, data.columns, self.final_pipe)
+        self.final_X, self.final_y, self.final_yhat = self.run_inference(data, self.final_pipe, data.columns)
 
     def plot_folds_ts(self, in_sample, results, idx, target):
         plot_ts(in_sample, idx=idx, c='steelblue',lw=2, label='actual')
@@ -124,14 +123,14 @@ class CVPredict:
         heatmap(df=pd.concat([self.final_X, self.final_yhat], axis=1), target=target, sort_col=self.final_X.columns[-1], forecast_line=self.n_forecast)
         return
 
-    def out_of_sample_predict(self, urlpath, model_id):
+    def get_forecast(self, urlpath, model_id):
         data = self.load_nyt(urlpath)
-        data = self.prep_pipe.transform(data)
-        X, y = self.split_data(data)
-        fitted_model = self.transform_fit(X, y, model_id)
-        yhat = self.transform_predict(data, fitted_model)
-        yhat.columns = pd.date_range(start=data.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
-        return data, yhat
+        X = self.prep_pipe.transform(data)
+        pipe = self.build_final_pipe(model_id)
+        yhat = pipe.fit(X).predict(X)
+        yhat = pipe[:-1].inverse_transform(yhat)
+        yhat.columns = pd.date_range(start=X.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
+        return X, yhat
 
     def save_obj(self, opath):
         with open(opath, 'wb') as f:

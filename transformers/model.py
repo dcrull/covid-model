@@ -1,5 +1,4 @@
 from sklearn.base import BaseEstimator, TransformerMixin
-from statsmodels.tsa.arima_model import ARIMA
 from functools import partial
 import pandas as pd
 import numpy as np
@@ -9,7 +8,7 @@ from multiprocessing import Pool, cpu_count
 from fbprophet import Prophet
 from tqdm import tqdm
 
-class Naive:
+class Naive(BaseEstimator, TransformerMixin):
     def __init__(self, method, kwargs, n_forecast=1):
         self.method = method
         self.kwargs = kwargs
@@ -26,28 +25,7 @@ class Naive:
             self.fit(pd.concat([X, yhat], axis=1))
         return np.maximum(yhat, 0).round()
 
-class SimpleARIMA:
-    def __init__(self, lag_order, degree_of_diff, ma_window, n_forecast=1, model=ARIMA):
-        self.lag_order = lag_order
-        self.degree_of_diff = degree_of_diff
-        self.ma_window = ma_window
-        self.model = partial(
-            model, order=(self.lag_order, self.degree_of_diff, self.ma_window)
-        )
-        self.n_forecast = n_forecast
-
-    def fit(self, X, y=None):
-        self.models = [self.model(endog=list(X.iloc[i, :])).fit(disp=0) for i in range(X.shape[0])]
-        return self
-
-    def predict(self, X):
-        yhat = pd.DataFrame(index=X.index)
-        for i in tqdm(range(self.n_forecast)):
-            yhat.loc[:, f'forecast_{i}'] = [model.forecast()[0][0] for model in self.models]
-            self.fit(pd.concat([X, yhat], axis=1))
-        return np.maximum(yhat, 0).round()
-
-class SimpleGBM:
+class SimpleGBM(BaseEstimator, TransformerMixin):
     def __init__(self, n_forecast=1, model=XGBRegressor, **params):
         self.model = mor(model(**params), n_jobs=-1)
         self.n_forecast = n_forecast
@@ -71,7 +49,7 @@ class SimpleGBM:
         yhat.index = X.index
         return yhat.round()
 
-class FBProph:
+class FBProph(BaseEstimator, TransformerMixin):
     def __init__(self, n_forecast=1, model=Prophet):
         self.n_forecast = n_forecast
         self.model = model
