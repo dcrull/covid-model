@@ -12,7 +12,7 @@ from transformers.nyt import PrepNYT
 from transformers.create_ts import CreateTS
 from transformers.differencing import Diff
 from transformers.power_transformer import PowerT, LogT
-from transformers.model import Naive, SimpleGBM, FBProph
+from transformers.ts_models import Naive, FBProph
 from transformers.clean import DropNA
 
 PREP_STEPS = [
@@ -32,7 +32,7 @@ MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
           'prophet': FBProph(),
           }
 
-class CVPredict:
+class COVPredict:
     def __init__(self,
                  n_forecast,
                  nyt_county_url=NYT_COUNTY_URL,
