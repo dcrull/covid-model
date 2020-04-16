@@ -1,4 +1,5 @@
 from sklearn.base import BaseEstimator, TransformerMixin
+from utils import string_padder
 
 class PrepNYT(BaseEstimator, TransformerMixin):
     def get_geoid(self, X):
@@ -12,9 +13,7 @@ class PrepNYT(BaseEstimator, TransformerMixin):
 
     def convert_fips(self, X):
         X['fips'] = [f'{i:.0f}' for i in X['fips']]
-        max_len = max([len(i) for i in X['fips']])
-        X['fips'] = [i.zfill(max_len) for i in X['fips']]
-        return X
+        return string_padder(X, 'fips')
 
     def fit(self, X):
         return self

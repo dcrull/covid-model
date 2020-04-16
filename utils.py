@@ -8,11 +8,10 @@ load_dotenv(".env")
 def api_to_json(query_url, api_keyname):
     return requests.get(f"{query_url}{os.getenv(api_keyname)}").json()
 
-# def string_padder(df, col):
-#     df[col] = [f'{i:.0f}' for i in df[col]] # convert to string/int
-#     max_len = max([len(i) for i in df[col]])
-#     df[col] = [i.zfill(max_len) for i in df[col]]
-#     return df
+def string_padder(df, col):
+    max_len = max([len(i) for i in df[col]])
+    df[col] = [i.zfill(max_len) for i in df[col]]
+    return df
 
 def exp_error(y, yhat, p=2):
     return pd.DataFrame((np.asarray(y) - np.asarray(yhat)) ** p, columns=y.columns, index=y.index)
