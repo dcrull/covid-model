@@ -8,6 +8,8 @@ from utils import api_to_json
 from sklearn.base import BaseEstimator, TransformerMixin
 from utils import string_padder
 
+#TODO: deal with NYTimes geo exceptions
+# https://github.com/nytimes/covid-19-data#geographic-exceptions
 
 class CensusShapes(BaseEstimator, TransformerMixin):
     def __init__(self,
