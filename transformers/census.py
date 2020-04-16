@@ -18,6 +18,8 @@ class CensusShapes(BaseEstimator, TransformerMixin):
         self.county_shp = Path(county_shp_path)
         self.state_shp = Path(state_shp_path)
 
+    # note: merge on all geometris (those w/ no covid data will be imputed to zero or NA but still mapped)
+
     # def load_gdfs(self, dpath):
     #     return gpd.read_file(dpath, geometry='geometry', crs='EPSG:4326')
     #
