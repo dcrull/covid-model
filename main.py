@@ -28,7 +28,6 @@ FEATURE_STEPS = [
 ]
 
 MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
-          'gbm':SimpleGBM(n_estimators=1000, n_jobs=-1),
           'prophet': FBProph(),
           }
 
@@ -59,7 +58,8 @@ class COVPredict:
         q, r = divmod(len(seq), k)
         return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
 
-    def load_nyt(self, url):
+    @staticmethod
+    def load_nyt(url):
         return pd.read_csv(url, parse_dates=['date'])
 
     def split_data(self, data):
