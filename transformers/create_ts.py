@@ -9,3 +9,6 @@ class CreateTS(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         return X.pivot(index='geoid', columns='date', values=self.response_var).fillna(0)
+
+    def inverse_transform(self, X):
+        return X

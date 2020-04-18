@@ -9,6 +9,7 @@ from config import NYT_COUNTY_URL, NYT_STATE_URL
 from utils import exp_error, perc_error, abs_perc_error
 from plotting import plot_ts, heatmap, plot_forecast
 from transformers.nyt import PrepNYT
+from transformers.census import CensusEnrich
 from transformers.create_ts import CreateTS
 from transformers.differencing import Diff
 from transformers.power_transformer import PowerT, LogT
@@ -17,11 +18,10 @@ from transformers.clean import DropNA
 
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
-    ('create_ts', CreateTS(response_var='cases')),
-    ('first_diff', Diff())
+    ('add_pop', CensusEnrich(query='?get=POP', year='2018', group='pep/charagegroups', api_url='https://api.census.gov/data')),
 ]
 
-FEATURE_STEPS = [
+TS_TRANSFORM_STEPS = [
     ('logtrans', LogT(func='log1p')),
     ('first_diff', Diff()),
     ('dropna', DropNA()),
@@ -34,20 +34,22 @@ MODELS = {'naive':Naive(method=np.mean, kwargs={'axis':1}),
 class COVPredict:
     def __init__(self,
                  n_forecast,
+                 target,
                  nyt_county_url=NYT_COUNTY_URL,
                  nyt_state_url=NYT_STATE_URL,
                  prep_steps=PREP_STEPS,
-                 feat_steps=FEATURE_STEPS,
+                 ts_transform_steps=TS_TRANSFORM_STEPS,
                  models=MODELS,
                  ):
-        self.nyt_county_url = nyt_county_url
+        self.target = target
         self.nyt_state_url = nyt_state_url
-        self.prep_pipe = Pipeline(prep_steps)
-        self.feature_steps = feat_steps
+        self.nyt_county_url = nyt_county_url
+        self.prep_steps = prep_steps
+        self.ts_transform_steps = ts_transform_steps
         self.models = models
-        self.__set_forecast__(n_forecast)
+        self.set_forecast(n_forecast)
 
-    def __set_forecast__(self, n_forecast):
+    def set_forecast(self, n_forecast):
         self.n_forecast = n_forecast
         for k,v in self.models.items():
             v.n_forecast = n_forecast
@@ -65,15 +67,17 @@ class COVPredict:
     def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
 
-    def data_prep(self, urlpath):
+    def load_and_prep(self, urlpath):
         data = self.load_nyt(urlpath)
-        data = self.prep_pipe.transform(data)
-        in_sample, out_sample = self.split_data(data)
-        return in_sample, out_sample
+        return Pipeline(self.prep_steps).fit_transform(data)
 
-    def build_final_pipe(self, model_id):
-        pipe = Pipeline(self.feature_steps + [(model_id, self.models[model_id])])
-        return pipe
+    def create_ts_feature(self, data, target, diff=True):
+        data = data.pivot(index='geoid', columns='date', values=target).fillna(0)
+        if diff: data = data.diff(axis=1)
+        return data
+
+    def ts_pipeline(self, data, ts_model_id):
+        return
 
     def run_inference(self, data, final_pipe, cols):
         X, y = self.split_data(data.loc[:, cols])
@@ -82,26 +86,28 @@ class COVPredict:
         yhat = final_pipe[:-1].inverse_transform(yhat)
         return X, y, yhat
 
-    def expanding_window(self, k, data, model_id):
+    def cv(self, k, urlpath, ts_model_id):
+        data = self.load_and_prep(urlpath)
+        data = self.create_ts_feature(data, self.target)
         col_chunks = self.expandingsplit(data.columns, k)
-        final_pipe = self.build_final_pipe(model_id)
-        return {f'{model_id}__fold_{ct}': self.run_inference(data, final_pipe, cols) for ct, cols in enumerate(col_chunks)}
+        final_pipe = Pipeline(self.ts_transform_steps + [(ts_model_id, self.models[ts_model_id])])
+        return {f'{ts_model_id}__fold_{ct}': self.run_inference(data, final_pipe, cols) for ct, cols in enumerate(col_chunks)}
 
-    def final_test(self, urlpath, model_id):
-        data = self.load_nyt(urlpath)
-        data = self.prep_pipe.transform(data)
-        self.final_pipe = self.build_final_pipe(model_id)
+    def final_test(self, urlpath, ts_model_id):
+        data = self.load_and_prep(urlpath)
+        data = self.create_ts_feature(data, self.target)
+        self.final_pipe = Pipeline(self.ts_transform_steps + [(ts_model_id, self.models[ts_model_id])])
         self.final_X, self.final_y, self.final_yhat = self.run_inference(data, self.final_pipe, data.columns)
 
     def plot_folds_ts(self, in_sample, results, idx, target):
         plot_ts(in_sample, idx=idx, c='steelblue',lw=2, label='actual')
         for k, v in results.items():
-            model_id, fold_id = k.split('__')
+            fold_id = k.split('__')[1]
             plot_ts(v[2], idx=idx, c='indianred', lw=3.5, label=fold_id+' forecast')
 
         title_suffix = 'mean across obs'
         if isinstance(idx, str): title_suffix = idx
-        plt.title(f'actual and {model_id} predicted {target} by cross-validation fold: {title_suffix}')
+        plt.title(f'actual and predicted {target} by cross-validation fold: {title_suffix}')
         plt.legend()
         plt.show()
         return
