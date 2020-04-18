@@ -24,14 +24,14 @@ class Naive(BaseEstimator, TransformerMixin):
         return np.maximum(yhat, 0).round()
 
 class FBProph(BaseEstimator, TransformerMixin):
-    def __init__(self, n_forecast=1, model=Prophet):
+    def __init__(self, n_forecast=1, model=Prophet, **kwargs):
         self.n_forecast = n_forecast
-        self.model = model
+        self.model = model(**kwargs)
 
     def get_forecast(self, rowdata):
         rowdata = rowdata.reset_index()
         rowdata.columns = ["ds", "y"]
-        fit_model = self.model().fit(rowdata)
+        fit_model = self.model.fit(rowdata)
         future = fit_model.make_future_dataframe(periods=self.n_forecast)
         forecast = fit_model.predict(future)
         return pd.Series(forecast.iloc[-self.n_forecast:, :]['yhat'])
