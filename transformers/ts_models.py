@@ -7,12 +7,12 @@ from fbprophet import Prophet
 from tqdm import tqdm
 
 class Naive(BaseEstimator, TransformerMixin):
-    def __init__(self, method, kwargs, n_forecast=1):
+    def __init__(self, method, kwargs):
         self.method = method
         self.kwargs = kwargs
-        self.n_forecast = n_forecast
 
-    def fit(self, X, y=None):
+    def fit(self, X, y):
+        self.n_forecast = y.shape[1]
         self.model = self.method(X, **self.kwargs)
         return self
 
@@ -24,25 +24,26 @@ class Naive(BaseEstimator, TransformerMixin):
         return np.maximum(yhat, 0).round()
 
 class FBProph(BaseEstimator, TransformerMixin):
-    def __init__(self, n_forecast=1, model=Prophet, **kwargs):
-        self.n_forecast = n_forecast
+    def __init__(self, model=Prophet, **kwargs):
         self.model = model(**kwargs)
 
-    def get_forecast(self, rowdata):
+    def get_forecast(self, rowdata, n_forecast):
         rowdata = rowdata.reset_index()
         rowdata.columns = ["ds", "y"]
         fit_model = self.model.fit(rowdata)
-        future = fit_model.make_future_dataframe(periods=self.n_forecast)
+        future = fit_model.make_future_dataframe(periods=n_forecast)
         forecast = fit_model.predict(future)
-        return pd.Series(forecast.iloc[-self.n_forecast:, :]['yhat'])
+        return pd.Series(forecast.iloc[-n_forecast:, :]['yhat'])
 
-    def fit(self, X, y=None):
+    def fit(self, X, y):
+        self.n_forecast = y.shape[1]
         return self
 
     def predict(self, X):
         p = Pool(cpu_count())
+        func = partial(self.get_forecast, n_forecast=self.n_forecast)
         yhat = list(
-            tqdm(p.imap(self.get_forecast, [row for i,row in X.iterrows()]), total=X.shape[0]))
+            tqdm(p.imap(func, [row for i,row in X.iterrows()]), total=X.shape[0]))
         p.close()
         p.join()
         yhat = pd.DataFrame(yhat)
