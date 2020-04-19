@@ -1,24 +1,5 @@
 # covid-model
 
-### load nytimes data:
-- make certain immediate transformations (convert data types, align geoids)
-
-### load census data:
-- need geometries
-- need pop and demo data
-
-### enrich data:
-- join NYT data with  census data and other records
-
-### plots
-- map
-- heatmap
-- time series
-- interactive
-- movies (of map)
-
-#### utils
-
 #### main
 - build data pipeline
     - run TSA transformations: diff, smoothing, etc
