@@ -10,6 +10,7 @@ from utils import exp_error, perc_error, abs_perc_error
 from plotting import plot_ts, heatmap, plot_forecast, boxplot_error
 from transformers.nyt import PrepNYT
 from transformers.census import CensusEnrich
+from transformers.scaler import TargetScaler
 from transformers.differencing import Diff
 from transformers.power_transformer import PowerT, LogT
 from transformers.ts_models import Naive, FBProph
@@ -18,6 +19,7 @@ from transformers.clean import DropNA
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('add_pop', CensusEnrich(query='?get=POP', year='2018', group='pep/charagegroups', api_url='https://api.census.gov/data')),
+    ('pop_scaler', TargetScaler(target_cols=['cases','deaths'], divisor_col='POP', multiplier=100.0))
 ]
 
 TS_TRANSFORM_STEPS = [

@@ -1,7 +1,16 @@
 from sklearn.base import BaseEstimator, TransformerMixin
 from utils import string_padder
+from config import IGNORE_TERRITORIES
 
 class PrepNYT(BaseEstimator, TransformerMixin):
+    def __init__(self, ignore_territories=IGNORE_TERRITORIES):
+        self.ignore_territories = ignore_territories
+
+    def address_exceptions(self, X):
+        # ignore territories
+        X = X.loc[~X['state'].isin(self.ignore_territories), :]
+        return X
+
     def get_geoid(self, X):
         # nytimes makes certain exceptions so unique geoid is needed
         # https://github.com/nytimes/covid-19-data#geographic-exceptions
@@ -19,6 +28,7 @@ class PrepNYT(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X):
+        X = self.address_exceptions(X)
         X = self.get_geoid(X)
         X = self.convert_fips(X)
         return X
