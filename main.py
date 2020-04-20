@@ -152,4 +152,4 @@ class COVPredict:
 
 # TODO: add maps
 # TODO: enrich
-# TODO: optimize prophet (logistic growth? changepts based on policy?, MCMC)
+# TODO: optimize prophet (logistic growth? (need capacities) changepts based on policy?, MCMC)

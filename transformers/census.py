@@ -11,6 +11,21 @@ from utils import string_padder
 #TODO: deal with NYTimes geo exceptions
 # https://github.com/nytimes/covid-19-data#geographic-exceptions
 
+# for KC this will produce data for greater KC area (i.e. all 4 counties in MO
+FIPS_MAPPER = {('geoid','New York, New York City','00xx0'):['36005','36047','36061','36081','36085'],
+               ('geoid', 'Missouri, Kansas City','00xx1'):['29037','29047','29095','29165']}
+
+def agg_sum(df_slice):
+    return df_slice.astype(int).sum()
+
+def exception_aggregator(target_data, census_data, mapper, agg_func):
+    for k,v in mapper.items():
+        new_row = agg_func(census_data.loc[census_data['fips'].isin(v), :])
+        new_row['fips'] = k[2]
+        census_data = census_data.append(new_row, ignore_index=True)
+        target_data.loc[target_data[k[0]] == k[1], 'fips'] = k[2]
+    return target_data, census_data
+
 class CensusShapes(BaseEstimator, TransformerMixin):
     def __init__(self,
                  county_shp_path='data/tl_2019_us_county/tl_2019_us_county.shp',
@@ -35,9 +50,11 @@ class CensusEnrich(BaseEstimator, TransformerMixin):
                  year='2018',
                  group='pep/charagegroups',
                  api_url='https://api.census.gov/data',
-                 env_api_keyname='CENSUS_API_KEY'):
+                 env_api_keyname='CENSUS_API_KEY',
+                 exception_agg_func=agg_sum):
         self.query_url = f"{api_url}/{year}/{group}{query}"
         self.env_api_keyname = env_api_keyname
+        self.exception_agg_func = agg_sum
 
     def get_census_df(self, query_url):
         try:
@@ -69,6 +86,7 @@ class CensusEnrich(BaseEstimator, TransformerMixin):
             census_data = string_padder(census_data, 'county')
             census_data['fips'] = census_data['fips'] + census_data['county']
             del census_data['county']
+            X, census_data = exception_aggregator(X, census_data, FIPS_MAPPER, self.exception_agg_func)
         return X.merge(census_data, on='fips', how='left')
 
     def fit(self, X):
