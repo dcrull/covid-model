@@ -9,7 +9,7 @@ from config import NYT_COUNTY_URL, NYT_STATE_URL
 from utils import exp_error, perc_error, abs_perc_error
 from plotting import plot_ts, heatmap, plot_forecast, boxplot_error
 from transformers.nyt import PrepNYT
-from transformers.census import CensusEnrich
+from transformers.census import CensusEnrich, CensusShapes
 from transformers.scaler import TargetScaler
 from transformers.differencing import Diff
 from transformers.power_transformer import PowerT, LogT
@@ -18,8 +18,9 @@ from transformers.clean import DropNA
 
 # some common pipeline steps
 PREP_DICT = {'prepnyt': PrepNYT(),
-              'add_pop': CensusEnrich(query='?get=POP', year='2018', group='pep/charagegroups', api_url='https://api.census.gov/data'),
-              'per_capita': TargetScaler(target_cols=['cases','deaths'], divisor_col='POP', multiplier=100000.0),
+             'add_geo': CensusShapes(),
+             'add_pop': CensusEnrich(query='?get=POP', year='2018', group='pep/charagegroups', api_url='https://api.census.gov/data'),
+             'per_capita': TargetScaler(target_cols=['cases','deaths'], divisor_col='POP', multiplier=100000.0),
               }
 
 TS_DICT = {'logtrans': LogT(func='log1p'),
@@ -36,7 +37,7 @@ class COVPredict:
                  nyt_county_url=NYT_COUNTY_URL,
                  nyt_state_url=NYT_STATE_URL,
                  prep_dict = PREP_DICT,
-                 prep_steps= ['prepnyt','add_pop','per_capita'],
+                 prep_steps= ['prepnyt','add_geo','add_pop','per_capita'],
                  ts_dict = TS_DICT,
                  ts_steps=['dropna','prophet'],
                  ):
