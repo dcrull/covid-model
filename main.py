@@ -150,7 +150,6 @@ class COVPredict:
             dill.dump(self, f)
 
 
-# TODO: make_pipeline
 # TODO: add maps
 # TODO: enrich
 # TODO: optimize prophet (logistic growth? changepts based on policy?, MCMC)
