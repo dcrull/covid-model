@@ -121,10 +121,10 @@ class COVPredict:
         heatmap(df=pd.concat([self.final_X, self.final_yhat], axis=1), target=self.target, sort_col=self.final_X.columns[-1], forecast_line=self.n_forecast)
         return
 
-    def get_forecast(self, urlpath, ts_model_id):
+    def get_forecast(self, urlpath):
         data = self.load_and_prep(urlpath)
         X = self.create_ts_feature(data, self.target)
-        pipe = Pipeline(self.ts_transform_steps + [(ts_model_id, self.models[ts_model_id])])
+        pipe = Pipeline(self.ts_transform_steps)
         yhat = pipe.fit(X).predict(X)
         yhat = pipe[:-1].inverse_transform(yhat)
         yhat.columns = pd.date_range(start=X.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
