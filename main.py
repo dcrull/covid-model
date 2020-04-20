@@ -19,7 +19,7 @@ from transformers.clean import DropNA
 PREP_STEPS = [
     ('prepnyt', PrepNYT()),
     ('add_pop', CensusEnrich(query='?get=POP', year='2018', group='pep/charagegroups', api_url='https://api.census.gov/data')),
-    ('pop_scaler', TargetScaler(target_cols=['cases','deaths'], divisor_col='POP', multiplier=100.0))
+    # ('pop_scaler', TargetScaler(target_cols=['cases','deaths'], divisor_col='POP', multiplier=100000.0))
 ]
 
 TS_TRANSFORM_STEPS = [
@@ -135,6 +135,7 @@ class COVPredict:
             dill.dump(self, f)
 
 
+# TODO: make_pipeline
 # TODO: add maps
 # TODO: enrich
 # TODO: optimize prophet (logistic growth? changepts based on policy?, MCMC)

@@ -21,7 +21,7 @@ class Naive(BaseEstimator, TransformerMixin):
         for i in tqdm(range(self.n_forecast)):
             yhat.loc[:, f'forecast_{i}'] = self.model
             self.fit(pd.concat([X, yhat], axis=1))
-        return np.maximum(yhat, 0).round()
+        return np.maximum(yhat, 0)
 
 class FBProph(BaseEstimator, TransformerMixin):
     def __init__(self, model=Prophet, **kwargs):
@@ -48,4 +48,4 @@ class FBProph(BaseEstimator, TransformerMixin):
         p.join()
         yhat = pd.DataFrame(yhat)
         yhat.index = X.index
-        return yhat.round()
+        return yhat
