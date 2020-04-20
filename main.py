@@ -21,6 +21,7 @@ PREP_DICT = {'prepnyt': PrepNYT(),
              'add_geo': CensusShapes(),
              'add_pop': CensusEnrich(query='?get=POP', year='2018', group='pep/charagegroups', api_url='https://api.census.gov/data'),
              'per_capita': TargetScaler(target_cols=['cases','deaths'], divisor_col='POP', multiplier=100000.0),
+             'per_capita_km': TargetScaler(target_cols=['cases','deaths'], divisor_col='ALAND', multiplier=1000.0),
               }
 
 TS_DICT = {'logtrans': LogT(func='log1p'),
@@ -37,7 +38,7 @@ class COVPredict:
                  nyt_county_url=NYT_COUNTY_URL,
                  nyt_state_url=NYT_STATE_URL,
                  prep_dict = PREP_DICT,
-                 prep_steps= ['prepnyt','add_geo','add_pop','per_capita'],
+                 prep_steps= ['prepnyt','add_geo','add_pop','per_capita','per_capita_km'],
                  ts_dict = TS_DICT,
                  ts_steps=['dropna','prophet'],
                  ):
@@ -63,6 +64,9 @@ class COVPredict:
     def load_and_prep(self, urlpath):
         data = self.load_nyt(urlpath)
         return self.prep_pipe.fit_transform(data)
+
+    def create_static_features(self, data):
+        return
 
     def create_ts_feature(self, data, target, diff=True):
         data = data.pivot(index='geoid', columns='date', values=target).fillna(0)
@@ -141,7 +145,8 @@ class COVPredict:
         label_suffix = 'mean across obs'
         if isinstance(idx, str): label_suffix = idx
         scale = 'count'
-        if 'per_capita' in self.prep_pipe.named_steps.keys(): scale = f"per {self.prep_pipe.get_params()['per_capita__multiplier']:0f} people"
+        if 'per_capita' in self.prep_pipe.named_steps.keys(): scale = f"per {self.prep_pipe.get_params()['per_capita__multiplier']:.0f} people"
+        if 'per_capita_km' in self.prep_pipe.named_steps.keys(): scale += ' per km'
         plt.title(f'actual {self.target} + {self.n_forecast} day forecast for {label_suffix} ({scale})')
         plt.legend()
         plt.show()
