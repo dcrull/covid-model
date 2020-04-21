@@ -1,6 +1,7 @@
 import dill
 import datetime
 import pandas as pd
+import geopandas as gpd
 import numpy as np
 import matplotlib.pyplot as plt
 from functools import partial
@@ -63,7 +64,9 @@ class COVPredict:
 
     def load_and_prep(self, urlpath):
         data = self.load_nyt(urlpath)
-        return self.prep_pipe.fit_transform(data)
+        data = self.prep_pipe.fit_transform(data)
+        self.geodf = data.groupby('geoid').agg('last')[['fips', 'geometry']]
+        return data
 
     def create_static_features(self, data):
         return
@@ -149,6 +152,15 @@ class COVPredict:
         if 'per_capita_km' in self.prep_pipe.named_steps.keys(): scale += ' per km'
         plt.title(f'actual {self.target} + {self.n_forecast} day forecast for {label_suffix} ({scale})')
         plt.legend()
+        plt.show()
+
+    def map_plot(self, col, title):
+        gpd.GeoDataFrame(pd.concat([self.geodf, col], axis=1, sort=True),
+                         geometry='geometry',
+                         crs='EPSG:4326').plot(column=0, legend=True)
+        plt.title(title)
+        plt.xlim([-125, -60])
+        plt.ylim([15, 50])
         plt.show()
 
     def save_obj(self, opath):
