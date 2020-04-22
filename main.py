@@ -176,6 +176,7 @@ class COVPredict:
             dill.dump(self, f)
 
 
-# TODO: add maps
-# TODO: enrich
+# TODO: fix plot inverse scale
+# TODO: add viz
 # TODO: optimize prophet (logistic growth? (need capacities) changepts based on policy?, MCMC)
+# TODO: data enrich
