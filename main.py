@@ -5,6 +5,7 @@ import geopandas as gpd
 import numpy as np
 import matplotlib.pyplot as plt
 from functools import partial
+from pathlib import Path
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL
 from utils import exp_error, perc_error, abs_perc_error
@@ -16,6 +17,8 @@ from transformers.differencing import Diff
 from transformers.power_transformer import PowerT, LogT
 from transformers.ts_models import Naive, FBProph
 from transformers.clean import DropNA
+
+MODEL_ID = 'test'
 
 # some common pipeline steps
 PREP_DICT = {'prepnyt': PrepNYT(),
@@ -138,15 +141,15 @@ class COVPredict:
         return
 
     def get_forecast(self, urlpath, target):
-        prep_data = self.load_and_prep(urlpath)
-        spatial_data = self.create_spatial_data(prep_data)
-        X = self.create_ts(prep_data, target)
+        self.prep_data = self.load_and_prep(urlpath)
+        self.spatial_data = self.create_spatial_data(self.prep_data)
+        X = self.create_ts(self.prep_data, target)
         forecast_cols = pd.date_range(start=X.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
-        pipe = self.ts_pipe
+        self.final_pipe = self.ts_pipe
         # empty df to set forecast dims
         y = pd.DataFrame(index=X.index, columns=forecast_cols)
-        yhat = pipe.fit(X, y).predict(X)
-        yhat = pipe[:-1].inverse_transform(yhat)
+        yhat = self.final_pipe.fit(X, y).predict(X)
+        yhat = self.final_pipe[:-1].inverse_transform(yhat)
         yhat.columns = forecast_cols
         return X, yhat
 
@@ -162,6 +165,7 @@ class COVPredict:
         plt.legend()
         plt.show()
 
+
     def map_plot(self, col, title, **plotkwargs):
         gpd.GeoDataFrame(pd.concat([self.prep_data[['geometry']], col], axis=1, sort=True),
                          geometry='geometry',
@@ -176,7 +180,6 @@ class COVPredict:
             dill.dump(self, f)
 
 
-# TODO: fix plot inverse scale
 # TODO: add viz
 # TODO: optimize prophet (logistic growth? (need capacities) changepts based on policy?, MCMC)
 # TODO: data enrich

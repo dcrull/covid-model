@@ -12,4 +12,4 @@ class TargetScaler(BaseEstimator, TransformerMixin):
         return (X * self.multiplier).div(self.divisor, axis=0)
 
     def inverse_transform(self, X):
-        return X.multiply(self.divisor) / self.multiplier
+        return X.multiply(self.divisor, axis=0) / self.multiplier
