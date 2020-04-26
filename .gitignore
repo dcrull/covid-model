@@ -1,10 +1,9 @@
 # Jupyter Notebook
 .ipynb_checkpoints
 
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+# PEP
 __pypackages__/
-*__pycache__/*
+**/__pycache__/*
 
 # Environments
 .env
@@ -14,3 +13,4 @@ venv/
 
 # data
 data/
+outputs/
