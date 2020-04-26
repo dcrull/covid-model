@@ -21,16 +21,24 @@ def heatmap(df, target, sort_col='2020-04-01', norm=colors.LogNorm(vmin=1), fore
     pyplot.title(f'heat map of {target} sorted on {sort_col}')
     pyplot.show()
 
-def plot_ts(data, idx=None, **kwargs):
+def plot_ts(data, idx=None, ma=7, title=None, **kwargs):
+    fig, ax = plt.subplots(figsize=(15,10))
     if idx is None:
         plot_data = data.mean()
-        plt.scatter(x=plot_data.index, y=plot_data, **kwargs)
-    elif isinstance(idx, int):
-        plot_data = data.sample(idx, random_state=32).T
-        plot_data.plot(**kwargs)
+        ax.scatter(x=plot_data.index, y=plot_data, **kwargs)
     elif isinstance(idx, str):
         plot_data = data.loc[idx, :]
-        plt.scatter(x=plot_data.index, y=plot_data, **kwargs)
+        ax.scatter(x=plot_data.index, y=plot_data, **kwargs)
+    if ma is not None:
+        ma_plot = plot_data.T.rolling(window=ma).mean().T
+        ax.plot(ma_plot.index, ma_plot, c='indianred', label=f'{ma} day moving avg.')
+    plt.legend(loc='best', fontsize=20)
+    if title is not None:
+        label_suffix = 'mean of all locations'
+        if isinstance(idx, str): label_suffix = idx
+        plt.title(f'{title} ({label_suffix})', fontsize=20)
+        plt.savefig(Path("plots", f"{title}.png"), bbox_inches='tight')
+    plt.show()
     return
 
 def plot_forecast(X, yhat, idx=None):
@@ -38,11 +46,13 @@ def plot_forecast(X, yhat, idx=None):
     plot_ts(yhat, idx=idx, c='indianred', ls='--', lw=2, label='forecast')
     plt.legend()
     plt.show()
+    return
 
 def boxplot_error(errdata):
     errdata.columns = [i.date() for i in errdata.columns]
     sns.boxplot(x='variable', y='value', data=pd.melt(errdata))
     plt.show()
+    return
 
 def get_window_sum(ts_data, win_size):
     return ts_data.iloc[:, -win_size:].sum(axis=1)
@@ -83,6 +93,7 @@ def choro_window_plot(spatial_data, ts_data, window, func, choro_col, title, mul
     df.name = choro_col
     df = merge_spatial(spatial_data, df, choro_col, multiplier)
     return choro_plot(df, choro_col, title, **plotkwargs)
+
 
 
 
