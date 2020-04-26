@@ -3,6 +3,8 @@ import seaborn as sns
 from matplotlib import pyplot,colors
 import pandas as pd
 import geopandas as gpd
+from pathlib import Path
+import contextily as ctx
 
 def trim_leading(data, thresh):
     idx = 0
@@ -45,17 +47,24 @@ def boxplot_error(errdata):
 def choro_plot(df, choro_col, title, **plotkwargs):
     # just plots lower 48 states
     df = df.loc[df['geometry'].notnull(), :]
-    gpd.GeoDataFrame(df, geometry='geometry', crs='EPSG:4326').plot(column=choro_col, legend=True, **plotkwargs)
-    plt.title(title)
+    fig, ax = plt.subplots(figsize=(15,15))
+    gpd.GeoDataFrame(df, geometry='geometry', crs=4326).plot(column=choro_col, legend=True, ax=ax, **plotkwargs)
+    # ctx.add_basemap(ax, source=ctx.providers.Stamen.TonerLite, zoom=2)
+    ax.get_legend().set_bbox_to_anchor((1,0.5))
+    ax.set_axis_off()
+    plt.title(title, fontsize=20)
     plt.xlim([-127, -66])
     plt.ylim([23, 50])
+    plt.savefig(Path("plots", f"{title}.png"), bbox_inches='tight')
     plt.show()
 
 def choro_cum_ct(spatial_data, obs_data, choro_col, title, multiplier=100000.0, **plotkwargs):
-    last_cum = obs_data.loc[obs_data['date']==obs_data['date'].max(), ['geoid','cases','deaths']].set_index('geoid')
+    last_date = obs_data['date'].max()
+    last_cum = obs_data.loc[obs_data['date']==last_date, ['geoid','cases','deaths']].set_index('geoid')
     df = pd.concat([spatial_data.set_index('geoid')[['geometry','POP']], last_cum], axis=1, sort=True)
     df.loc[:, ['cases','deaths']] = (df.loc[: ,['cases', 'deaths']].astype(float) * multiplier).div(df['POP'].astype(float), axis=0)
-    choro_plot(df, choro_col, title, **plotkwargs)
+    title = f'{title} as of {last_date.date()}'
+    return choro_plot(df, choro_col, title, **plotkwargs)
 
 
 #NOTES:

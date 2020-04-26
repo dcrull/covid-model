@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 from functools import partial
 from pathlib import Path
 from sklearn.pipeline import Pipeline
-from config import NYT_COUNTY_URL, NYT_STATE_URL
+from config import NYT_COUNTY_URL, NYT_STATE_URL, MODEL_ID
 from utils import exp_error, perc_error, abs_perc_error
-from plotting import plot_ts, heatmap, plot_forecast, boxplot_error
+from plotting import plot_ts, heatmap, plot_forecast, boxplot_error, choro_cum_ct
 from transformers.nyt import PrepNYT
 from transformers.census import CensusEnrich, CensusShapes
 from transformers.scaler import TargetScaler
@@ -18,7 +18,7 @@ from transformers.power_transformer import PowerT, LogT
 from transformers.ts_models import Naive, FBProph
 from transformers.clean import DropNA
 
-MODEL_ID = 'test'
+
 
 # some common pipeline steps
 PREP_DICT = {'prepnyt': PrepNYT(),
@@ -171,9 +171,6 @@ class COVPredict:
         plt.title(f'actual + {self.n_forecast} day forecast for {label_suffix}')
         plt.legend()
         plt.show()
-
-
-
 
     def save_obj(self, opath):
         with open(opath, 'wb') as f:
