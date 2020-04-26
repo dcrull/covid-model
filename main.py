@@ -9,7 +9,7 @@ from pathlib import Path
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL, MODEL_ID
 from utils import exp_error, perc_error, abs_perc_error
-from plotting import plot_ts, heatmap, plot_forecast, boxplot_error, choro_cum_ct
+from plotting import plot_ts, heatmap, plot_forecast, boxplot_error, choro_cum, choro_window_plot, get_window_sum, get_win_on_win_growth_perc
 from transformers.nyt import PrepNYT
 from transformers.census import CensusEnrich, CensusShapes
 from transformers.scaler import TargetScaler
@@ -78,22 +78,21 @@ class COVPredict:
 
     def create_spatial_data(self, data):
         data = self.spatial_pipe.fit_transform(data.groupby('geoid').agg('last').drop(['date','cases','deaths'], axis=1).reset_index())
-        return data.loc[data['geoid'].notnull(), :]
+        return data.loc[data['geoid'].notnull(), :].set_index('geoid')
 
-    def create_ts(self, obs_data, spatial_data, target, get_diff):
-        spatial_data.set_index('geoid', inplace=True)
+    def create_ts(self, obs_data, spatial_data, target, get_diff, scale_data):
         obs_data = obs_data.pivot(index='geoid', columns='date', values=target).fillna(0)
         if get_diff: obs_data = obs_data.diff(axis=1)
         obs_data = obs_data.reindex(spatial_data.index, fill_value=0.0)
-        if self.scaler_dict is not None:
+        if scale_data:
             self.scaler_pipe = self.make_scale_pipe(spatial_data, self.scaler_dict)
             obs_data = self.scaler_pipe.fit_transform(obs_data)
         return obs_data
 
-    def create_features(self, urlpath, target, get_diff):
+    def create_features(self, urlpath, target, get_diff, scale_data):
         obs_data = self.load_and_prep(urlpath)
         spatial_data = self.create_spatial_data(obs_data)
-        features = self.create_ts(obs_data, spatial_data, target, get_diff)
+        features = self.create_ts(obs_data, spatial_data, target, get_diff, scale_data)
         return obs_data, spatial_data, features
 
     def run_inference(self, data, final_pipe, cols):
@@ -103,8 +102,8 @@ class COVPredict:
         yhat = final_pipe[:-1].inverse_transform(yhat)
         return X, y, yhat
 
-    def cv(self, k, urlpath, target, get_diff):
-        _, _, X = self.create_features(urlpath, target, get_diff)
+    def cv(self, k, urlpath, target, get_diff, scale_data):
+        _, _, X = self.create_features(urlpath, target, get_diff, scale_data)
         col_chunks = self.expandingsplit(X.columns, k)
         return {f'fold_{ct}': self.run_inference(X, self.ts_pipe, cols) for ct, cols in enumerate(col_chunks)}
 
@@ -149,8 +148,8 @@ class COVPredict:
     #     heatmap(df=pd.concat([self.final_X, self.final_yhat], axis=1), target=target, sort_col=self.final_X.columns[-1], forecast_line=self.n_forecast)
     #     return
 
-    def get_forecast(self, urlpath, target, get_diff=True):
-        obs_data, spatial_data, X = self.create_features(urlpath, target, get_diff)
+    def get_forecast(self, urlpath, target, get_diff=True, scale_data=True):
+        obs_data, spatial_data, X = self.create_features(urlpath, target, get_diff, scale_data)
         forecast_cols = pd.date_range(start=X.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
         self.final_pipe = self.ts_pipe
         # empty df to set forecast dims

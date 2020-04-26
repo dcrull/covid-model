@@ -44,6 +44,19 @@ def boxplot_error(errdata):
     sns.boxplot(x='variable', y='value', data=pd.melt(errdata))
     plt.show()
 
+def get_window_sum(ts_data, win_size):
+    return ts_data.iloc[:, -win_size:].sum(axis=1)
+
+def get_win_on_win_growth_perc(ts_data, win_size):
+    last_win = ts_data.iloc[:, -win_size:].sum(axis=1)
+    prev_win = ts_data.iloc[:, -win_size*2:-win_size].sum(axis=1)
+    return (last_win - prev_win)*100.0 / (prev_win + (prev_win==0)*1.0)
+
+def merge_spatial(spatial_data, ref_data, target, multiplier):
+    df = pd.concat([spatial_data[['geometry', 'POP']], ref_data], axis=1, sort=True)
+    if multiplier is not None: df.loc[:, [target]] = (df.loc[:, [target]].astype(float) * multiplier).div(df['POP'].astype(float), axis=0)
+    return df
+
 def choro_plot(df, choro_col, title, **plotkwargs):
     # just plots lower 48 states
     df = df.loc[df['geometry'].notnull(), :]
@@ -58,22 +71,30 @@ def choro_plot(df, choro_col, title, **plotkwargs):
     plt.savefig(Path("plots", f"{title}.png"), bbox_inches='tight')
     plt.show()
 
-def choro_cum_ct(spatial_data, obs_data, choro_col, title, multiplier=100000.0, **plotkwargs):
+def choro_cum(spatial_data, obs_data, choro_col, title, multiplier=100000.0, **plotkwargs):
     last_date = obs_data['date'].max()
-    last_cum = obs_data.loc[obs_data['date']==last_date, ['geoid','cases','deaths']].set_index('geoid')
-    df = pd.concat([spatial_data.set_index('geoid')[['geometry','POP']], last_cum], axis=1, sort=True)
-    df.loc[:, ['cases','deaths']] = (df.loc[: ,['cases', 'deaths']].astype(float) * multiplier).div(df['POP'].astype(float), axis=0)
+    df = obs_data.loc[obs_data['date'] == last_date, ['geoid', 'cases', 'deaths']].set_index('geoid')
+    df = merge_spatial(spatial_data, df, choro_col, multiplier)
     title = f'{title} as of {last_date.date()}'
     return choro_plot(df, choro_col, title, **plotkwargs)
+
+def choro_window_plot(spatial_data, ts_data, window, func, choro_col, title, multiplier=100000.0, **plotkwargs):
+    df = func(ts_data, window)
+    df.name = choro_col
+    df = merge_spatial(spatial_data, df, choro_col, multiplier)
+    return choro_plot(df, choro_col, title, **plotkwargs)
+
 
 
 #NOTES:
 # - use 'inferno' for choropleth
 # use scheme="fisher_jenks" for total cases state/county
+# use missing_kwds={'color':'lightgray'} for missing values
+# use per 1000.0 for county
 
 # Plots and descriptive analytics
-# choropleth map of total cases/deaths state/county (scaled by pop)
-# choropleth map of growth in cases/deaths state/county (scaled by pop in last week)
+# choropleth map of total cases/deaths state/county (scaled by pop) [DONE]
+# choropleth map of growth in cases/deaths state/county (scaled by pop in last week) [DONE]
 # TS of total cases/deaths state/county (mean)
 # TS of total cases/deaths state/count (top 10 most in last week; fastest growth in last week)
 # distribution of cases/deaths states/county
