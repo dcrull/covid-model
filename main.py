@@ -67,7 +67,7 @@ class COVPredict:
 
     @staticmethod
     def make_scale_pipe(spatial_data, scaler_dict):
-        return Pipeline([(k, TargetScaler(divisor=spatial_data.set_index('geoid')[v[0]].astype(float), multiplier=v[1])) for k,v in scaler_dict.items()])
+        return Pipeline([(k, TargetScaler(divisor=spatial_data[v[0]].astype(float), multiplier=v[1])) for k,v in scaler_dict.items()])
 
     def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
@@ -81,9 +81,10 @@ class COVPredict:
         return data.loc[data['geoid'].notnull(), :]
 
     def create_ts(self, obs_data, spatial_data, target, get_diff):
+        spatial_data.set_index('geoid', inplace=True)
         obs_data = obs_data.pivot(index='geoid', columns='date', values=target).fillna(0)
         if get_diff: obs_data = obs_data.diff(axis=1)
-        obs_data = spatial_data.set_index('geoid').join(obs_data, how='left')
+        obs_data = obs_data.reindex(spatial_data.index, fill_value=0.0)
         if self.scaler_dict is not None:
             self.scaler_pipe = self.make_scale_pipe(spatial_data, self.scaler_dict)
             obs_data = self.scaler_pipe.fit_transform(obs_data)
@@ -154,7 +155,7 @@ class COVPredict:
         self.final_pipe = self.ts_pipe
         # empty df to set forecast dims
         y = pd.DataFrame(index=X.index, columns=forecast_cols)
-        yhat = self.final_pipe.fit(X, y).predict(X)
+        yhat = self.final_pipe.fit(X, y).predict(X)  # TODO: cache ts model?
         yhat = self.final_pipe[:-1].inverse_transform(yhat)
         yhat.columns = forecast_cols
         return obs_data, spatial_data, X, yhat
