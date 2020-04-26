@@ -1,22 +1,9 @@
 # covid-model
 
-#### main
-- build data pipeline
-    - run TSA transformations: diff, smoothing, etc
-    - run enrichment
-    - run model(s) ensemble models
-    - tune
-    - eval
+Simple forecasting model for COVID-19 cases in the U.S. based on open data from the NYTimes: https://github.com/nytimes/covid-19-data
 
-### objectives
-- Predict instances of cases 1, 3, 7 days out
-- Predict instances of death 1, 3, 7 days out
-- Predict top 25 counties / 5 states by {cases, death} 1, 3, 7
-- Predict local "apex" of cases/deaths
+Built using Scikit-learn pipeline to support modular data preprocessing and model development.
 
-### tasks
-1. build this all for State level first
-2. Prophet (bayesian)
-3. enrich data
-4. ensemble approach w/ advanced features (SA, etc)
-5. func approx w/ DL
+Main forecast model driven by Facebook's open source Prophet library (https://facebook.github.io/prophet/), which in turn relies on STAN as the Bayesian inference engine.
+
+[WIP]
