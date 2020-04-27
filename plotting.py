@@ -5,6 +5,7 @@ import pandas as pd
 import geopandas as gpd
 from pathlib import Path
 import contextily as ctx
+import math
 
 def trim_leading(data, thresh):
     idx = 0
@@ -21,23 +22,29 @@ def heatmap(df, target, sort_col='2020-04-01', norm=colors.LogNorm(vmin=1), fore
     pyplot.title(f'heat map of {target} sorted on {sort_col}')
     pyplot.show()
 
-def plot_ts(data, idx=None, ma=7, title=None, **kwargs):
+def single_ts(plot_data, ma=7, title=None, **kwargs):
     fig, ax = plt.subplots(figsize=(15,10))
-    if idx is None:
-        plot_data = data.mean()
-        ax.scatter(x=plot_data.index, y=plot_data, **kwargs)
-    elif isinstance(idx, str):
-        plot_data = data.loc[idx, :]
-        ax.scatter(x=plot_data.index, y=plot_data, **kwargs)
+    ax.scatter(x=plot_data.index, y=plot_data, **kwargs)
     if ma is not None:
         ma_plot = plot_data.T.rolling(window=ma).mean().T
         ax.plot(ma_plot.index, ma_plot, c='indianred', label=f'{ma} day moving avg.')
     plt.legend(loc='best', fontsize=20)
-    if title is not None:
-        label_suffix = 'mean of all locations'
-        if isinstance(idx, str): label_suffix = idx
-        plt.title(f'{title} ({label_suffix})', fontsize=20)
-        plt.savefig(Path("plots", f"{title}.png"), bbox_inches='tight')
+    if title is not None: plt.savefig(Path("plots", f"{title}.png"), bbox_inches='tight')
+    plt.show()
+    return
+
+def multi_ts(data, ma=7, title=None, **kwargs):
+    nrows= math.ceil(len(data)/2)
+    fig, axes = plt.subplots(nrows, 2, figsize=(15,10))
+    for i,idx in enumerate(data.index):
+        n, m = i//2,i%2
+        plot_data = data.loc[idx, :]
+        axes[n,m].scatter(x=plot_data.index, y=plot_data, c='steelblue', label=idx, **kwargs)
+        if ma is not None:
+            ma_plot = plot_data.T.rolling(window=ma).mean().T
+            axes[n,m].plot(ma_plot.index, ma_plot, c='indianred', label=f'{ma} day moving avg.')
+        axes[n,m].legend(loc='best', fontsize=10)
+    if title is not None: plt.savefig(Path("plots", f"{title}.png"), bbox_inches='tight')
     plt.show()
     return
 
@@ -95,7 +102,153 @@ def choro_window_plot(spatial_data, ts_data, window, func, choro_col, title, mul
     return choro_plot(df, choro_col, title, **plotkwargs)
 
 
+def final_plots(obj):
+    state_obs = obj.load_and_prep(obj.nyt_state_url)
+    state_spatial = obj.create_spatial_data(state_obs)
+    state_cases_ts = obj.create_ts(state_obs, state_spatial, 'cases', get_diff=True, scale_data=False)
+    state_deaths_ts = obj.create_ts(state_obs, state_spatial, 'deaths', get_diff=True, scale_data=False)
+    county_obs = obj.load_and_prep(obj.nyt_county_url)
+    county_spatial = obj.create_spatial_data(county_obs)
+    county_cases_ts = obj.create_ts(county_obs, county_spatial, 'cases', get_diff=True, scale_data=False)
+    county_deaths_ts = obj.create_ts(county_obs, county_spatial, 'deaths', get_diff=True, scale_data=False)
 
+    # total by cases state
+    choro_cum(spatial_data=state_spatial,
+              obs_data=state_obs,
+              choro_col='cases',
+              title='total cases per 100,000 by state',
+              cmap='inferno',
+              schema='fisher_jenks',
+              missing_kwds={'color':'lightgray'})
+
+    # total by cases county
+    choro_cum(spatial_data=county_spatial,
+              obs_data=county_obs,
+              choro_col='cases',
+              title='total cases per 100,000 by county',
+              cmap='inferno',
+              schema='fisher_jenks',
+              missing_kwds={'color': 'lightgray'})
+
+    # total by deaths state
+    choro_cum(spatial_data=state_spatial,
+              obs_data=state_obs,
+              choro_col='deaths',
+              title='total deaths per 100,000 by state',
+              cmap='inferno',
+              schema='fisher_jenks',
+              missing_kwds={'color': 'lightgray'})
+
+    # total by deaths county
+    choro_cum(spatial_data=county_spatial,
+              obs_data=county_obs,
+              choro_col='deaths',
+              title='total deaths per 100,000 by county',
+              cmap='inferno',
+              schema='fisher_jenks',
+              missing_kwds={'color': 'lightgray'})
+
+    # last week total cases by state
+    choro_window_plot(spatial_data=state_spatial,
+                      ts_data=state_cases_ts,
+                      window=7,
+                      func=get_window_sum,
+                      choro_col='cases',
+                      title='total cases last 7 days per 100,000 people by state',
+                      multiplier=100000.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color':'lightgray'})
+
+    # last week total cases by county
+    choro_window_plot(spatial_data=county_spatial,
+                      ts_data=county_cases_ts,
+                      window=7,
+                      func=get_window_sum,
+                      choro_col='cases',
+                      title='total cases last 7 days per 100,000 people by county',
+                      multiplier=100000.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color': 'lightgray'})
+
+    # last week growth cases by state
+    choro_window_plot(spatial_data=state_spatial,
+                      ts_data=state_cases_ts,
+                      window=7,
+                      func=get_win_on_win_growth_perc,
+                      choro_col='cases',
+                      title='week on week % change in cases by state',
+                      multiplier=1.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color': 'lightgray'})
+
+    # last week growth cases by county
+    choro_window_plot(spatial_data=county_spatial,
+                      ts_data=county_cases_ts,
+                      window=7,
+                      func=get_win_on_win_growth_perc,
+                      choro_col='cases',
+                      title='week on week % change in cases by county',
+                      multiplier=1.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color': 'lightgray'})
+
+    # last week total deaths by state
+    choro_window_plot(spatial_data=state_spatial,
+                      ts_data=state_cases_ts,
+                      window=7,
+                      func=get_window_sum,
+                      choro_col='deaths',
+                      title='total deaths last 7 days per 100,000 people by state',
+                      multiplier=100000.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color': 'lightgray'})
+
+    # last week total deaths by county
+    choro_window_plot(spatial_data=county_spatial,
+                      ts_data=county_cases_ts,
+                      window=7,
+                      func=get_window_sum,
+                      choro_col='deaths',
+                      title='total deaths last 7 days per 100,000 people by county',
+                      multiplier=100000.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color': 'lightgray'})
+
+    # last week growth deaths by state
+    choro_window_plot(spatial_data=state_spatial,
+                      ts_data=state_cases_ts,
+                      window=7,
+                      func=get_win_on_win_growth_perc,
+                      choro_col='deaths',
+                      title='week on week % change in deaths by state',
+                      multiplier=1.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color': 'lightgray'})
+
+    # last week growth deaths by county
+    choro_window_plot(spatial_data=county_spatial,
+                      ts_data=county_cases_ts,
+                      window=7,
+                      func=get_win_on_win_growth_perc,
+                      choro_col='deaths',
+                      title='week on week % change in deaths by county',
+                      multiplier=1.0,
+                      cmap='inferno',
+                      schema='fisher_jenks',
+                      missing_kwds={'color': 'lightgray'})
+
+    def create_features(self, urlpath, target, get_diff, scale_data):
+        obs_data = self.load_and_prep(urlpath)
+        spatial_data = self.create_spatial_data(obs_data)
+        features = self.create_ts(obs_data, spatial_data, target, get_diff, scale_data)
+        return obs_data, spatial_data, features
 
 #NOTES:
 # - use 'inferno' for choropleth
@@ -106,7 +259,7 @@ def choro_window_plot(spatial_data, ts_data, window, func, choro_col, title, mul
 # Plots and descriptive analytics
 # choropleth map of total cases/deaths state/county (scaled by pop) [DONE]
 # choropleth map of growth in cases/deaths state/county (scaled by pop in last week) [DONE]
-# TS of total cases/deaths state/county (mean)
+# TS of total cases/deaths state/county (mean) [DONE]
 # TS of total cases/deaths state/count (top 10 most in last week; fastest growth in last week)
 # distribution of cases/deaths states/county
 # distribution of growth rate cases/deaths state/county

@@ -9,7 +9,7 @@ from pathlib import Path
 from sklearn.pipeline import Pipeline
 from config import NYT_COUNTY_URL, NYT_STATE_URL, MODEL_ID
 from utils import exp_error, perc_error, abs_perc_error
-from plotting import plot_ts, heatmap, plot_forecast, boxplot_error, choro_cum, choro_window_plot, get_window_sum, get_win_on_win_growth_perc
+from plotting import single_ts, heatmap, plot_forecast, boxplot_error, choro_cum, choro_window_plot, get_window_sum, get_win_on_win_growth_perc
 from transformers.nyt import PrepNYT
 from transformers.census import CensusEnrich, CensusShapes
 from transformers.scaler import TargetScaler
