@@ -1,4 +1,4 @@
-ipython==7.13.0
+ipython==7.16.3
 pandas==1.0.3
 seaborn==0.10.0
 geopandas==0.7.0
@@ -9,6 +9,6 @@ pysal==2.2.0
 xgboost==1.0.2
 fbprophet==0.6
 plotly==4.6.0
-ipython==7.13.0
+ipython==7.16.3
 dill==0.3.1.1
 python-dotenv==0.12.0
