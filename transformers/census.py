@@ -45,9 +45,15 @@ class CensusShapes(BaseEstimator, TransformerMixin):
         self.state_shp = Path(state_shp_path)
         self.exception_agg_func = exception_agg_func
 
+    @staticmethod
+    def state_mapper(grp, data):
+        try:
+            return grp.loc[data, 'state']
+        except:
+            return np.nan
+
     def load_gdfs(self, dpath):
-        return gpd.read_file(dpath, geometry='geometry', crs='EPSG:4326').rename(columns={'GEOID': 'fips'})[
-            ['fips', 'ALAND', 'INTPTLAT', 'INTPTLON', 'geometry']]
+        return gpd.read_file(dpath, geometry='geometry', crs='EPSG:4326').rename(columns={'GEOID': 'fips'})
 
     def handle_exceptions(self, X, census_data):
         select_mapper = [('geoid', 'New York, New York City', '00xx0')]
@@ -57,15 +63,25 @@ class CensusShapes(BaseEstimator, TransformerMixin):
                                     self.exception_agg_func,
                                     drop_cols=True)
 
+    def handle_missing_statenames(self, X):
+        X['county'].fillna(X['NAME'], inplace=True)
+        grp = X.groupby('STATEFP')[['state']].agg('last').dropna()
+        state_map = X['STATEFP'].apply(lambda x: self.state_mapper(grp, x))
+        X['state'].fillna(state_map, inplace=True)
+        X['geoid'].fillna(X['state']+', '+X['county'], inplace=True)
+        return X
+
     def fit(self, X):
         return self
 
     def transform(self, X):
         if 'county' in X:
             X, census_data = self.handle_exceptions(X, self.load_gdfs(self.county_shp))
+            X = X.merge(census_data, on='fips', how='right')
+            return self.handle_missing_statenames(X)
         else:
             census_data = self.load_gdfs(self.state_shp)
-        return X.merge(census_data, on='fips', how='left')
+            return X.merge(census_data, on='fips', how='right')
 
 class CensusEnrich(BaseEstimator, TransformerMixin):
     def __init__(self,

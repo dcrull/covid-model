@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 from functools import partial
 from pathlib import Path
 from sklearn.pipeline import Pipeline
-from config import NYT_COUNTY_URL, NYT_STATE_URL
+from config import NYT_COUNTY_URL, NYT_STATE_URL, MODEL_ID
 from utils import exp_error, perc_error, abs_perc_error
-from plotting import plot_ts, heatmap, plot_forecast, boxplot_error
+from plotting import final_plots, single_ts, heatmap, plot_forecast, boxplot_error, choro_cum, choro_window_plot, get_window_sum, get_win_on_win_growth_perc
 from transformers.nyt import PrepNYT
 from transformers.census import CensusEnrich, CensusShapes
 from transformers.scaler import TargetScaler
@@ -18,7 +18,7 @@ from transformers.power_transformer import PowerT, LogT
 from transformers.ts_models import Naive, FBProph
 from transformers.clean import DropNA
 
-MODEL_ID = 'test'
+
 
 # some common pipeline steps
 PREP_DICT = {'prepnyt': PrepNYT(),
@@ -65,6 +65,10 @@ class COVPredict:
         q, r = divmod(len(seq), k)
         return (seq[0:(i + 1) * q + min(i + 1, r)] for i in range(k))
 
+    @staticmethod
+    def make_scale_pipe(spatial_data, scaler_dict):
+        return Pipeline([(k, TargetScaler(divisor=spatial_data[v[0]].astype(float), multiplier=v[1])) for k,v in scaler_dict.items()])
+
     def split_data(self, data):
         return data.iloc[:, :-self.n_forecast], data.iloc[:, -self.n_forecast:]
 
@@ -74,15 +78,22 @@ class COVPredict:
 
     def create_spatial_data(self, data):
         data = self.spatial_pipe.fit_transform(data.groupby('geoid').agg('last').drop(['date','cases','deaths'], axis=1).reset_index())
-        if self.scaler_dict is not None:
-            self.scaler_pipe = Pipeline([(k, TargetScaler(divisor=data.set_index('geoid')[v[0]].astype(float), multiplier=v[1])) for k,v in self.scaler_dict.items()])
-        return data
+        return data.loc[data['geoid'].notnull(), :].set_index('geoid')
 
-    def create_ts(self, data, target, diff=True):
-        data = data.pivot(index='geoid', columns='date', values=target).fillna(0)
-        if diff: data = data.diff(axis=1)
-        if hasattr(self, 'scaler_pipe'): data = self.scaler_pipe.fit_transform(data)
-        return data
+    def create_ts(self, obs_data, spatial_data, target, get_diff, scale_data):
+        obs_data = obs_data.pivot(index='geoid', columns='date', values=target).fillna(0)
+        if get_diff: obs_data = obs_data.diff(axis=1)
+        obs_data = obs_data.reindex(spatial_data.index, fill_value=0.0)
+        if scale_data:
+            self.scaler_pipe = self.make_scale_pipe(spatial_data, self.scaler_dict)
+            obs_data = self.scaler_pipe.fit_transform(obs_data)
+        return obs_data
+
+    def create_features(self, urlpath, target, get_diff, scale_data):
+        obs_data = self.load_and_prep(urlpath)
+        spatial_data = self.create_spatial_data(obs_data)
+        features = self.create_ts(obs_data, spatial_data, target, get_diff, scale_data)
+        return obs_data, spatial_data, features
 
     def run_inference(self, data, final_pipe, cols):
         X, y = self.split_data(data.loc[:, cols])
@@ -91,13 +102,10 @@ class COVPredict:
         yhat = final_pipe[:-1].inverse_transform(yhat)
         return X, y, yhat
 
-    def cv(self, k, urlpath, target):
-        data = self.load_and_prep(urlpath)
-        spatial_data = self.create_spatial_data(data)
-        X = self.create_ts(data, target)
+    def cv(self, k, urlpath, target, get_diff, scale_data):
+        _, _, X = self.create_features(urlpath, target, get_diff, scale_data)
         col_chunks = self.expandingsplit(X.columns, k)
-        final_pipe = self.ts_pipe
-        return {f'fold_{ct}': self.run_inference(X, final_pipe, cols) for ct, cols in enumerate(col_chunks)}
+        return {f'fold_{ct}': self.run_inference(X, self.ts_pipe, cols) for ct, cols in enumerate(col_chunks)}
 
     def cv_plot_ts(self, results, idx, target):
         for k, v in results.items():
@@ -119,39 +127,37 @@ class COVPredict:
         boxplot_error(err)
         return
 
-    def final_test(self, urlpath, target):
-        self.prep_data = self.load_and_prep(urlpath)
-        self.spatial_data = self.create_spatial_data(self.prep_data)
-        X = self.create_ts(self.prep_data, target)
-        self.final_pipe = self.ts_pipe
-        self.final_X, self.final_y, self.final_yhat = self.run_inference(X, self.final_pipe, X.columns)
+    # def final_test(self, urlpath, target):
+    #     self.prep_data = self.load_and_prep(urlpath)
+    #     self.spatial_data = self.create_spatial_data(self.prep_data)
+    #     X = self.create_ts(self.prep_data, target)
+    #     self.final_pipe = self.ts_pipe
+    #     self.final_X, self.final_y, self.final_yhat = self.run_inference(X, self.final_pipe, X.columns)
+    #
+    # def final_plots_and_error(self, idx, target, err_func):
+    #     self.final_err = err_func(self.final_y, self.final_yhat).mean().mean()
+    #
+    #     fig = plt.figure()
+    #     plot_ts(pd.concat([self.final_X, self.final_y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
+    #     label_suffix = 'mean across obs'
+    #     if isinstance(idx, str): label_suffix = idx
+    #     plot_ts(self.final_yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
+    #     plt.title(f'actual and predicted {target}; err: {self.final_err:.4f}')
+    #
+    #     fig = plt.figure()
+    #     heatmap(df=pd.concat([self.final_X, self.final_yhat], axis=1), target=target, sort_col=self.final_X.columns[-1], forecast_line=self.n_forecast)
+    #     return
 
-    def final_plots_and_error(self, idx, target, err_func):
-        self.final_err = err_func(self.final_y, self.final_yhat).mean().mean()
-
-        fig = plt.figure()
-        plot_ts(pd.concat([self.final_X, self.final_y], axis=1), idx=idx, c='steelblue',lw=2, label='actual')
-        label_suffix = 'mean across obs'
-        if isinstance(idx, str): label_suffix = idx
-        plot_ts(self.final_yhat, idx=idx, c='indianred', lw=3.5, label=f'forecast for {label_suffix}')
-        plt.title(f'actual and predicted {target}; err: {self.final_err:.4f}')
-
-        fig = plt.figure()
-        heatmap(df=pd.concat([self.final_X, self.final_yhat], axis=1), target=target, sort_col=self.final_X.columns[-1], forecast_line=self.n_forecast)
-        return
-
-    def get_forecast(self, urlpath, target):
-        self.prep_data = self.load_and_prep(urlpath)
-        self.spatial_data = self.create_spatial_data(self.prep_data)
-        X = self.create_ts(self.prep_data, target)
+    def get_forecast(self, urlpath, target, get_diff=True, scale_data=True):
+        obs_data, spatial_data, X = self.create_features(urlpath, target, get_diff, scale_data)
         forecast_cols = pd.date_range(start=X.columns[-1] + datetime.timedelta(days=1), periods=self.n_forecast, freq='D')
         self.final_pipe = self.ts_pipe
         # empty df to set forecast dims
         y = pd.DataFrame(index=X.index, columns=forecast_cols)
-        yhat = self.final_pipe.fit(X, y).predict(X)
+        yhat = self.final_pipe.fit(X, y).predict(X)  # TODO: cache ts model?
         yhat = self.final_pipe[:-1].inverse_transform(yhat)
         yhat.columns = forecast_cols
-        return X, yhat
+        return obs_data, spatial_data, X, yhat
 
     def plot_forecast(self, X, yhat, idx, inverse_scale=False):
         if inverse_scale:
@@ -163,16 +169,6 @@ class COVPredict:
         if isinstance(idx, str): label_suffix = idx
         plt.title(f'actual + {self.n_forecast} day forecast for {label_suffix}')
         plt.legend()
-        plt.show()
-
-
-    def map_plot(self, col, title, **plotkwargs):
-        gpd.GeoDataFrame(pd.concat([self.prep_data[['geometry']], col], axis=1, sort=True),
-                         geometry='geometry',
-                         crs='EPSG:4326').plot(column=0, legend=True, **plotkwargs)
-        plt.title(title)
-        plt.xlim([-127, -66])
-        plt.ylim([23, 50])
         plt.show()
 
     def save_obj(self, opath):
